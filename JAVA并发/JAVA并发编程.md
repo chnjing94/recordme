@@ -164,3 +164,113 @@ J.U.C整体如下图
 
  [【死磕Java并发】—–J.U.C之Condition](http://cmsblogs.com/?p=2222)
 
+## 6. FutureTask
+
+### 6.1 示例
+
+```java
+    public static void main(String[] args) throws Exception {
+        FutureTask<String> futureTask = new FutureTask<String>(new Callable<String>() {
+            @Override
+            public String call() throws Exception {
+                log.info("do something in callable");
+                Thread.sleep(5000);
+                return "Done";
+            }
+        });
+
+        new Thread(futureTask).start();
+        log.info("do something in main");
+        Thread.sleep(1000);
+        String result = futureTask.get();
+        log.info("result：{}", result);
+    }
+```
+
+### 6.2 Fork/Join
+
+其场景为：如果一个应用程序能够被分解成多个子任务，而且结合多个子任务的结果就能够得到最终的答案，那么它就适合使用FORK/JOIN模式来实现。[JAVA并行框架学习之ForkJoin](https://www.cnblogs.com/jiyuqi/p/4547082.html)
+
+```java
+public class ForkJoinTaskExample extends RecursiveTask<Integer> {
+
+    public static final int threshold = 2;
+    private int start;
+    private int end;
+
+    public ForkJoinTaskExample(int start, int end) {
+        this.start = start;
+        this.end = end;
+    }
+
+    @Override
+    protected Integer compute() {
+        int sum = 0;
+
+        //如果任务足够小就计算任务
+        boolean canCompute = (end - start) <= threshold;
+        if (canCompute) {
+            for (int i = start; i <= end; i++) {
+                sum += i;
+            }
+        } else {
+            // 如果任务大于阈值，就分裂成两个子任务计算
+            int middle = (start + end) / 2;
+            ForkJoinTaskExample leftTask = new ForkJoinTaskExample(start, middle);
+            ForkJoinTaskExample rightTask = new ForkJoinTaskExample(middle + 1, end);
+
+            // 执行子任务
+            leftTask.fork();
+            rightTask.fork(); 
+
+            // 等待任务执行结束合并其结果
+            int leftResult = leftTask.join();
+            int rightResult = rightTask.join();
+
+            // 合并子任务
+            sum = leftResult + rightResult;
+        }
+        return sum;
+    }
+
+    public static void main(String[] args) {
+        ForkJoinPool forkjoinPool = new ForkJoinPool();
+
+        //生成一个计算任务，计算1+2+3+4
+        ForkJoinTaskExample task = new ForkJoinTaskExample(1, 100);
+
+        //执行一个任务
+        Future<Integer> result = forkjoinPool.submit(task);
+
+        try {
+            log.info("result:{}", result.get());
+        } catch (Exception e) {
+            log.error("exception", e);
+        }
+    }
+}
+```
+
+### 6.3 BlockingQueue
+
+ [BlockingQueue深入解析－BlockingQueue看这一篇就够了](https://www.cnblogs.com/WangHaiMing/p/8798709.html)
+
+#### 6.3.1 DelayQueue
+
+DelayQueue的泛型参数需要实现Delayed接口，Delayed接口继承了Comparable接口，DelayQueue内部使用非线程安全的优先队列（PriorityQueue），并使用Leader/Followers模式，最小化不必要的等待时间。DelayQueue不允许包含null元素。
+
+Leader/Followers模式：
+
+1. 有若干个线程(一般组成线程池)用来处理大量的事件
+2. 有一个线程作为领导者，等待事件的发生；其他的线程作为追随者，仅仅是睡眠。
+3. 假如有事件需要处理，领导者会从追随者中指定一个新的领导者，自己去处理事件。
+4. 唤醒的追随者作为新的领导者等待事件的发生。
+5. 处理事件的线程处理完毕以后，就会成为追随者的一员，直到被唤醒成为领导者。
+6. 假如需要处理的事件太多，而线程数量不够(能够动态创建线程处理另当别论)，则有的事件可能会得不到处理。
+
+所有线程会有三种身份中的一种：leader和follower，以及一个干活中的状态：proccesser。它的基本原则就是，永远最多只有一个leader。而所有follower都在等待成为leader。线程池启动时会自动产生一个Leader负责等待网络IO事件，当有一个事件产生时，Leader线程首先通知一个Follower线程将其提拔为新的Leader，然后自己就去干活了，去处理这个网络事件，处理完毕后加入Follower线程等待队列，等待下次成为Leader。这种方法可以增强CPU高速缓存相似性，及消除动态内存分配和线程间的数据交换。
+
+#### 6.3.2 ArrayBlockingQueue
+
+#### 6.3.3 LinkedBlockingQueue
+
