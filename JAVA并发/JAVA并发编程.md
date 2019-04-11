@@ -1,4 +1,4 @@
-
+ 
 
 # JAVA并发编程
 
@@ -164,9 +164,9 @@ J.U.C整体如下图
 
  [【死磕Java并发】—–J.U.C之Condition](http://cmsblogs.com/?p=2222)
 
-## 6. FutureTask
+## 6. J.U.C组件拓展
 
-### 6.1 示例
+### 6.1 FutureTask
 
 ```java
     public static void main(String[] args) throws Exception {
@@ -273,4 +273,66 @@ Leader/Followers模式：
 #### 6.3.2 ArrayBlockingQueue
 
 #### 6.3.3 LinkedBlockingQueue
+
+## 7. 线程池
+
+ [【死磕Java并发】—–J.U.C之线程池：ThreadPoolExecutor](http://cmsblogs.com/?p=2448)
+
+为什么用线程池？
+
+线程池有几个状态，怎样转换？
+
+ThreadPoolExecutor构造函数有哪些参数，分别起什么作用？
+
+线程池的任务处理策略?
+
+- 小于corePoolSize时，来一个任务就新建一个线程去执行
+
+- 当前线程数大于等于corePoolSize时，先入队列，不行，再增加线程去执行当前任务，直到maximumPoolSize,失败则执行拒绝策略。
+- 如果workqueue是无长度限制的，则maximumPoolSize参数无用
+- 增加的线程和之前的线程同等重要，没有区别，也就意味着，在队列满了之后，再增加任务，会把整个线程池的处理能力撑大。而且，新来的任务会被立刻执行，这有点不公平的意思，感觉就像你在超市排队付钱，突然有个新的收银台开始工作了，后来的人直接就去结账了。
+- 一个线程在keepAliveTime内，没有拿到任务，就会终止退出被销毁，如果那个时候的存活线程数小于corePoolSize，新建一个线程以维持住corePoolSize个线程数量。
+- 如果任务添加的速度大于处理任务的速度，则keepAliveTime参数没有用处，因为不会发生获取任务超时。
+
+拒绝策略有几种？分别是？
+
+- 也可自己实现
+
+shoudown()和shotdownNow()区别？
+
+> shutdown只是将线程池的状态设置为SHUTWDOWN状态，内部正在跑的任务和队列里等待的任务，会执行完。而shutdownNow则是将线程池的状态设置为STOP，正在执行的任务则被停止，返回没被执行任务的列表。
+
+Executor框架提供的三种线程池分别是？它们的构造参数是？
+
+线程池的线程什么时候销毁，什么时候增加？
+
+## 8. 多线程并发
+
+### 8.1 死锁
+
+### 8.2 多线程并发最佳实践
+
+- 使用本地变量
+- 使用不可变类
+- 最小化锁的范围 `S=1/(1-a+a/n)`-阿姆达尔定律
+- 使用线程池创建线程，而不是new Thread
+- 宁可使用同步，不使用线程的wait(),notify()，使用AQS
+- 使用BlockingQueue实现生产消费者模式
+- 使用并发集合，而不是加了锁的同步集合
+- 使用Semaphore创建有界的访问
+- 宁可使用同步代码块，不使用同步方法
+- 避免使用静态变量
+
+### 8.3 Spring与线程安全
+
+- Spring Bean: Scope singleton, prototype
+- 默认Scope为singleton，它管理的对象为无状态对象时，像service, controller之类的，所以不存在线程安全问题
+
+### 8.4 HashMap与ConcurrentHashMap
+
+- HashMap在多线程下，扩容时会出现死循环
+
+## 9. 多线程并发总结
+
+![](./images/03.png)
 
