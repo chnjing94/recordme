@@ -330,7 +330,18 @@ Executor框架提供的三种线程池分别是？它们的构造参数是？
 
 ### 8.4 HashMap与ConcurrentHashMap
 
+[深入浅出ConcurrentHashMap1.8](<https://www.jianshu.com/p/c0642afe03e0>)
+
+[深入分析ConcurrentHashMap1.8的扩容实现](https://www.jianshu.com/p/f6730d5784ad)
+
 - HashMap在多线程下，扩容时会出现死循环
+- ConcurrentHashMap
+  - 1.8之前和之后的不同？
+  - ForwardingNode的作用
+  - 初始化时机
+  - put操作，cas sync
+  - 链表转红黑树
+  - 什么时候扩容，扩容过程
 
 ## 9. 多线程并发总结
 
