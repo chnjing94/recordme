@@ -92,6 +92,15 @@
 
 - TheadLocal [Java并发编程：深入剖析ThreadLocal](https://www.cnblogs.com/dolphin0520/p/3920407.html)
 
+> - ThreadLocalMap键值为当前ThreadLocal变量，value为变量副本
+> - 实际的通过ThreadLocal创建的副本是存储在每个线程自己的threadLocals中的；
+> - 为何threadLocals的类型ThreadLocalMap的键值为ThreadLocal对象，因为每个线程中可有多个threadLocal变量。
+> - 在进行get之前，必须先set，否则会报空指针异常；
+
+- **什么是 InheritableThreadLocal ？**
+  - InheritableThreadLocal 类，是 ThreadLocal 类的子类。ThreadLocal 中每个线程拥有它自己的值，与 ThreadLocal 不同的是，**InheritableThreadLocal 允许一个线程以及该线程创建的所有子线程都可以访问它保存的值**。
+  - 实现：在new MyThread()的时候，jdk是自己判断当前线程有没有InheritableThreadLocals，有就会赋值给创建的子线程。
+
 ### 4.3 线程安全/不安全类
 
 - StringBuilder -> StringBuffer
@@ -347,3 +356,96 @@ Executor框架提供的三种线程池分别是？它们的构造参数是？
 
 ![](./images/03.png)
 
+## 10. 面试题补充
+
+-  **你了解守护线程吗？它和非守护线程有什么区别？**
+
+  Java 中的线程分为两种：守护线程（Daemon）和用户线程（User）。
+
+  - 任何线程都可以设置为守护线程和用户线程，通过方法`Thread#setDaemon(boolean on)` 设置。`true` 则把该线程设置为守护线程，反之则为用户线程。
+  - `Thread#setDaemon(boolean on)` 方法，必须在`Thread#start()` 方法之前调用，否则运行时会抛出异常。
+
+  唯一的区别是：
+
+  > 程序运行完毕，JVM 会等待非守护线程完成后关闭，但是 JVM 不会等待守护线程。
+
+  - 判断虚拟机(JVM)何时离开，Daemon 是为其他线程提供服务，如果全部的 User Thread 已经撤离，Daemon 没有可服务的线程，JVM 撤离。
+  - 也可以理解为守护线程是 JVM 自动创建的线程（但不一定），用户线程是程序创建的线程。比如，JVM 的垃圾回收线程是一个守护线程，当所有线程已经撤离，不再产生垃圾，守护线程自然就没事可干了，当垃圾回收线程是 Java 虚拟机上仅剩的线程时，Java 虚拟机会自动离开。
+
+  扩展：Thread Dump 打印出来的线程信息，含有 daemon 字样的线程即为守护进程。可能会有：服务守护进程、编译守护进程、Windows 下的监听 Ctrl + break 的守护进程、Finalizer 守护进程、引用处理守护进程、GC 守护进程。
+
+  写java多线程程序时，一般比较喜欢用java自带的多线程框架，比如ExecutorService，但是java的线程池会将守护线程转换为用户线程，所以如果要使用后台线程就不能用java的线程池。
+
+  关于守护线程的各种骚操作，可以看看 [《Java 守护线程概述》](https://blog.csdn.net/u013256816/article/details/50392298) 。​ 
+
+- **线程的生命周期？**
+
+  线程一共有五个状态，分别如下：
+
+  - 新建(new)：当创建Thread类的一个实例（对象）时，此线程进入新建状态（未被启动）。例如：`Thread t1 = new Thread()` 。
+
+  - 可运行(runnable)：线程对象创建后，其他线程(比如 main 线程）调用了该对象的 start 方法。该状态的线程位于可运行线程池中，等待被线程调度选中，获取 cpu 的使用权。例如：`t1.start()` 。
+
+    > 有些文章，会称可运行(runnable)为就绪，意思是一样的。
+
+  - 运行(running)：线程获得 CPU 资源正在执行任务（`#run()` 方法），此时除非此线程自动放弃 CPU 资源或者有优先级更高的线程进入，线程将一直运行到结束。
+
+  - 死亡(dead)：当线程执行完毕或被其它线程杀死，线程就进入死亡状态，这时线程不可能再进入就绪状态等待执行。
+
+    - 自然终止：正常运行完 `#run()`方法，终止。
+    - 异常终止：调用 `#stop()` 方法，让一个线程终止运行。
+
+  - 堵塞(blocked)：由于某种原因导致正在运行的线程让出 CPU 并暂停自己的执行，即进入堵塞状态。直到线程进入可运行(runnable)状态，才有机会再次获得 CPU 资源，转到运行(running)状态。阻塞的情况有三种：
+
+    - 正在睡眠：调用 `#sleep(long t)` 方法，可使线程进入睡眠方式。
+
+      > 一个睡眠着的线程在指定的时间过去可进入可运行(runnable)状态。
+
+    - 正在等待：调用 `#wait()` 方法。
+
+      > 调用 `notify()` 方法，回到就绪状态。
+
+    - 被另一个线程所阻塞：调用 `#suspend()` 方法。
+
+      > 调用 `#resume()` 方法，就可以恢复。
+
+整体如下图所示：
+
+![](./images/04.png)
+
+另一张图
+
+![](./images/05.png)
+
+- **如何结束一个阻塞的线程？**
+
+  如果一个线程由于等待某些事件的发生而被阻塞，又该怎样停止该线程呢？这种情况经常会发生，比如当一个线程由于需要等候键盘输入而被阻塞，或者调用 `Thread#join()` 方法，或者 `Thread#sleep(...)` 方法，在网络中调用`ServerSocket#accept()` 方法，或者调用了`DatagramSocket#receive()` 方法时，都有可能导致线程阻塞，使线程处于处于不可运行状态时。即使主程序中将该线程的共享变量设置为 `true` ，但该线程此时根本无法检查循环标志，当然也就无法立即中断。
+
+  这里我们给出的建议是，不要使用 `Thread#stop()· 方法，而是使用 Thread 提供的`#interrupt()` 方法，因为该方法虽然不会中断一个正在运行的线程，但是它可以使一个被阻塞的线程抛出一个中断异常，从而使线程提前结束阻塞状态，退出堵塞代码。
+
+- **Thread类的 sleep 方法和对象的 wait 方法都可以让线程暂停执行，它们有什么区别？**
+
+  - sleep 方法，是线程类 Thread 的静态方法。调用此方法会让当前线程暂停执行指定的时间，将执行机会（CPU）让给其他线程，但是对象的锁依然保持，因此休眠时间结束后会自动恢复（线程回到就绪状态）
+  - wait 方法，是 Object 类的方法。调用对象的 `#wait()` 方法，会导致当前线程放弃对象的锁（线程暂停执行），进入对象的等待池（wait pool），只有调用对象的 `#notify()` 方法（或`#notifyAll()`方法）时，才能唤醒等待池中的线程进入等锁池（lock pool），如果线程重新获得对象的锁就可以进入就绪状态。
+
+- **synchronized 的原理是什么?**
+
+`synchronized`是 Java 内置的关键字，它提供了一种独占的加锁方式。
+
+- `synchronized`的获取和释放锁由JVM实现，用户不需要显示的释放锁，非常方便。
+- 然而，synchronized也有一定的局限性。
+  - 当线程尝试获取锁的时候，如果获取不到锁会一直阻塞。
+  - 如果获取锁的线程进入休眠或者阻塞，除非当前线程异常，否则其他线程尝试获取锁必须一直等待。
+
+关于原理，直接阅读 [《【死磕 Java 并发】—– 深入分析 synchronized 的实现原理》](http://www.iocoder.cn/JUC/sike/synchronized/?vip)
+
+- Java 对象头、Monitor
+- 锁优化
+  - 自旋锁
+    - 适应自旋锁
+  - 锁消除
+  - 锁粗化
+  - 锁的升级
+    - 重量级锁
+    - 轻量级锁
+    - 偏向锁
