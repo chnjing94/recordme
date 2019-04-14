@@ -34,6 +34,13 @@
 - 用作状态标识量，双重检测（例如单例模式）
 - 内存屏障功能
 
+面试题：
+
+- 举例说明指令重排序在多线程下可能导致错误
+- **volatile 变量和 atomic 变量有什么不同？**
+- **volatile 能使得一个非原子操作变成原子操作吗?**
+  - 用 `volatile` 修饰 `long` 和 `double` 变量，使其能按原子类型来读写。`double` 和 `long` 都是64位宽，因此对这两种类型的读是分为两部分的，第一次读取第一个 32 位，然后再读剩下的 32 位，这个过程不是原子的，但 Java 中 `volatile` 型的 `long` 或 `double` 变量的读写是原子的。
+
 ### 2.3 有序性
 
 - 8条happens-before原则： [【死磕Java并发】-----Java内存模型之happens-before](https://www.cnblogs.com/chenssy/p/6393321.html)
@@ -146,6 +153,12 @@ J.U.C整体如下图
 ## 5. AQS
 
 > [【死磕Java并发】—–J.U.C之AQS：AQS简介](http://cmsblogs.com/?p=2174)
+>
+> [【死磕 Java 并发】—– J.U.C 之 AQS：CLH 同步队列](http://www.iocoder.cn/JUC/sike/aqs-1-clh?vip)
+>
+> [【死磕 Java 并发】—– J.U.C 之 AQS：同步状态的获取与释放](http://www.iocoder.cn/JUC/sike/aqs-2?vip)
+>
+>  [【死磕 Java 并发】—– J.U.C 之 AQS：阻塞和唤醒线程](http://www.iocoder.cn/JUC/sike/aqs-3/)
 
 ### 5.1 CountDownLatch
 
@@ -430,22 +443,22 @@ Executor框架提供的三种线程池分别是？它们的构造参数是？
 
 - **synchronized 的原理是什么?**
 
-`synchronized`是 Java 内置的关键字，它提供了一种独占的加锁方式。
+  `synchronized`是 Java 内置的关键字，它提供了一种独占的加锁方式。
 
-- `synchronized`的获取和释放锁由JVM实现，用户不需要显示的释放锁，非常方便。
-- 然而，synchronized也有一定的局限性。
-  - 当线程尝试获取锁的时候，如果获取不到锁会一直阻塞。
-  - 如果获取锁的线程进入休眠或者阻塞，除非当前线程异常，否则其他线程尝试获取锁必须一直等待。
+  - `synchronized`的获取和释放锁由JVM实现，用户不需要显示的释放锁，非常方便。
+  - 然而，synchronized也有一定的局限性。
+    - 当线程尝试获取锁的时候，如果获取不到锁会一直阻塞。
+    - 如果获取锁的线程进入休眠或者阻塞，除非当前线程异常，否则其他线程尝试获取锁必须一直等待。
 
-关于原理，直接阅读 [《【死磕 Java 并发】—– 深入分析 synchronized 的实现原理》](http://www.iocoder.cn/JUC/sike/synchronized/?vip)
+  关于原理，直接阅读 [《【死磕 Java 并发】—– 深入分析 synchronized 的实现原理》](http://www.iocoder.cn/JUC/sike/synchronized/?vip)
 
-- Java 对象头、Monitor
-- 锁优化
-  - 自旋锁
-    - 适应自旋锁
-  - 锁消除
-  - 锁粗化
-  - 锁的升级
-    - 重量级锁
-    - 轻量级锁
-    - 偏向锁
+  - Java 对象头、Monitor
+  - 锁优化
+    - 自旋锁
+      - 适应自旋锁
+    - 锁消除
+    - 锁粗化
+    - 锁的升级
+      - 重量级锁
+      - 轻量级锁
+      - 偏向锁
