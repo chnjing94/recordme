@@ -62,3 +62,4 @@
 - Hypercube [《自顶向下深入分析Netty（十）–JEMalloc分配算法》](https://www.jianshu.com/p/15304cd63175)
 - 高兴的博客 [《jemalloc和内存管里》](http://www.cnblogs.com/gaoxing/p/4253833.html)
 - 沧行 [《Netty内存池实现》](https://www.jianshu.com/p/8d894e42b6e6) 这篇，有几个图，非常非常非常不错。
+

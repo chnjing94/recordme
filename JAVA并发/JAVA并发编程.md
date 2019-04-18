@@ -32,7 +32,7 @@
 
 - Volatile  [Java并发编程：volatile关键字解析](https://www.cnblogs.com/dolphin0520/p/3920373.html)
 - 用作状态标识量，双重检测（例如单例模式）
-- 内存屏障功能
+- 内存屏障功能，防止指令重排序
 
 面试题：
 
@@ -40,10 +40,13 @@
 - **volatile 变量和 atomic 变量有什么不同？**
 - **volatile 能使得一个非原子操作变成原子操作吗?**
   - 用 `volatile` 修饰 `long` 和 `double` 变量，使其能按原子类型来读写。`double` 和 `long` 都是64位宽，因此对这两种类型的读是分为两部分的，第一次读取第一个 32 位，然后再读剩下的 32 位，这个过程不是原子的，但 Java 中 `volatile` 型的 `long` 或 `double` 变量的读写是原子的。
+- **为什么代码会重排序？**
 
 ### 2.3 有序性
 
 - 8条happens-before原则： [【死磕Java并发】-----Java内存模型之happens-before](https://www.cnblogs.com/chenssy/p/6393321.html)
+  - 1. 如果一个操作 happens-before 另一个操作，那么第一个操作的执行结果，将对第二个操作可见，而且第一个操作的执行顺序，排在第二个操作之前。
+  - 2. 两个操作之间存在 happens-before 关系，并不意味着一定要按照 happens-before 原则制定的顺序来执行。如果重排序之后的执行结果与按照 happens-before 关系来执行的结果一致，那么这种重排序并不非法。
 
 ## 3. 安全发布对象
 
@@ -324,7 +327,7 @@ shoudown()和shotdownNow()区别？
 
 > shutdown只是将线程池的状态设置为SHUTWDOWN状态，内部正在跑的任务和队列里等待的任务，会执行完。而shutdownNow则是将线程池的状态设置为STOP，正在执行的任务则被停止，返回没被执行任务的列表。
 
-Executor框架提供的三种线程池分别是？它们的构造参数是？
+Executors提供的三种普通线程池分别是？它们的构造参数是？
 
 线程池的线程什么时候销毁，什么时候增加？
 

@@ -165,7 +165,7 @@ NioEventLoop(NioEventLoopGroup parent, Executor executor, SelectorProvider selec
 
 `#rebuildSelector()` 方法，重建 NIO Selector 对象。
 
-考虑到让本文更专注在 EventLoop 的逻辑，并且不影响对本文的理解，所以暂时不讲解它的具体实现。详细解析，见 [Part3-handleIOEvent](https://github.com/chnjing94/netty-source-analysis/blob/master/EventLoop/Part3-handleIOEvent/handleIOEvent.md) 。
+考虑到让本文更专注在 EventLoop 的逻辑，并且不影响对本文的理解，所以暂时不讲解它的具体实现。详细解析，见 Part3-handleIOEvent 。
 
 #### 2.5 newTaskQueue
 
