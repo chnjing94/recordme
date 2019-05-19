@@ -32,7 +32,7 @@
 
 - Volatile  [Java并发编程：volatile关键字解析](https://www.cnblogs.com/dolphin0520/p/3920373.html)
 - 用作状态标识量，双重检测（例如单例模式）
-- 内存屏障功能，防止指令重排序
+- 内存屏障功能，防止指令重排序，对volatile变量的写操作之前的内存操作，不会重排序到其之后，对volatile变量的读操作之后的内存操作，不会重排序到其之前。
 
 面试题：
 
@@ -45,8 +45,8 @@
 ### 2.3 有序性
 
 - 8条happens-before原则： [【死磕Java并发】-----Java内存模型之happens-before](https://www.cnblogs.com/chenssy/p/6393321.html)
-  - 1. 如果一个操作 happens-before 另一个操作，那么第一个操作的执行结果，将对第二个操作可见，而且第一个操作的执行顺序，排在第二个操作之前。
-  - 2. 两个操作之间存在 happens-before 关系，并不意味着一定要按照 happens-before 原则制定的顺序来执行。如果重排序之后的执行结果与按照 happens-before 关系来执行的结果一致，那么这种重排序并不非法。
+  - 如果一个操作 happens-before 另一个操作，那么第一个操作的执行结果，将对第二个操作**可见**。
+  - 两个操作之间存在 happens-before 关系，并不意味着一定要按照 happens-before 原则制定的顺序来执行。如果重排序之后的执行结果与按照 happens-before 关系来执行的结果一致，那么这种重排序并不非法。
 
 ## 3. 安全发布对象
 
@@ -86,7 +86,7 @@
     - 原理[为什么我墙裂建议大家使用枚举来实现单例。](https://blog.csdn.net/moakun/article/details/80688851)
     - 是一种懒汉模式
     - 对于枚举类实现的单例来说，我有可能只调用枚举类的外部类的其他方法，而不去获取实例，这样内部枚举类不会被初始化。对于饿汉模式来说，不管你或不获取实例，实例都会在初始化阶段被创建。
-    - 防止序列化对单例的破坏，双重检测的懒汉单例，可能会被序列化破坏单例。
+    - 防止序列化对单例的破坏，双重检测的懒汉单例，可能会被序列化破坏单例。序列化会通过反射调用无参数的构造方法创建一个新的对象。
 
 - 对象逸出：一种错误发布，当一个对象还没有构造完成，就被别的线程看见。
 
@@ -186,6 +186,47 @@ J.U.C整体如下图
  [【死磕Java并发】—–J.U.C之读写锁：ReentrantReadWriteLock](http://cmsblogs.com/?p=2213)
 
 [JDK8新增锁StampedLock详解](<http://blog.sina.com.cn/s/blog_6f5e71b30102xfsb.html>)
+
+StampedLock 读模板：
+
+```java
+final StampedLock sl = 
+  new StampedLock();
+
+// 乐观读
+long stamp = 
+  sl.tryOptimisticRead();
+// 读入方法局部变量
+......
+// 校验 stamp
+if (!sl.validate(stamp)){
+  // 升级为悲观读锁
+  stamp = sl.readLock();
+  try {
+    // 读入方法局部变量
+    .....
+  } finally {
+    // 释放悲观读锁
+    sl.unlockRead(stamp);
+  }
+}
+// 使用方法局部变量执行业务操作
+......
+
+```
+
+StampedLock 写模板：
+
+```java
+long stamp = sl.writeLock();
+try {
+  // 写共享变量
+  ......
+} finally {
+  sl.unlockWrite(stamp);
+}
+
+```
 
  [【死磕Java并发】—–J.U.C之Condition](http://cmsblogs.com/?p=2222)
 
@@ -312,11 +353,11 @@ ThreadPoolExecutor构造函数有哪些参数，分别起什么作用？
 线程池的任务处理策略?
 
 - 小于corePoolSize时，来一个任务就新建一个线程去执行
-
 - 当前线程数大于等于corePoolSize时，先入队列，不行，再增加线程去执行当前任务，直到maximumPoolSize,失败则执行拒绝策略。
 - 如果workqueue是无长度限制的，则maximumPoolSize参数无用
 - 增加的线程和之前的线程同等重要，没有区别，也就意味着，在队列满了之后，再增加任务，会把整个线程池的处理能力撑大。而且，新来的任务会被立刻执行，这有点不公平的意思，感觉就像你在超市排队付钱，突然有个新的收银台开始工作了，后来的人直接就去结账了。
-- 一个线程在keepAliveTime内，没有拿到任务，就会终止退出被销毁，如果那个时候的存活线程数小于corePoolSize，新建一个线程以维持住corePoolSize个线程数量。
+- 当`allowCoreThreadTimeOut || wc > corePoolSize`为true时，一个线程在keepAliveTime内，调用`workQueue`的`poll(timeout)`没有拿到任务，就会终止退出被销毁，如果此时存活的线程数小于corePoolSize，新建一个线程以维持住corePoolSize个线程数量。
+- 当`allowCoreThreadTimeOut || wc > corePoolSize`为false时，线程会调用`workQueue`的`take()`，一直等待获取任务。
 - 如果任务添加的速度大于处理任务的速度，则keepAliveTime参数没有用处，因为不会发生获取任务超时。
 
 拒绝策略有几种？分别是？
