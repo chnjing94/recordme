@@ -14,9 +14,11 @@
 - 可变参数会自动转化为数组
 - 枚举类enum，会被编译为静态类
 
+# 6. 访问权限控制
 
-
-
+- protected关键字针对继承而言的，子类可以访问父类的protected方法，同时，protected也赋予了包访问权限。
+- java文件里非public class类的命名可以不与文件名相同。
+- class不能是private或者protected的，只能是public或者包访问权限
 
 
 
