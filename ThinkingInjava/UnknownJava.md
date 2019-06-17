@@ -20,7 +20,10 @@
 - java文件里非public class类的命名可以不与文件名相同。
 - class不能是private或者protected的，只能是public或者包访问权限
 
+# 7. 复用类
 
+- 子类重写父类方法时，返回值必须一致，访问权限只能增不能减。
+- 
 
 
 
