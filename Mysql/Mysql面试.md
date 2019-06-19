@@ -127,5 +127,29 @@ set [session/global/persist] sql_mode = 'xxxx'
 
 ![](./pic/2-4 SQL Mode1.png)
 
-### 3.1.1 分析一个Group By语句的异常原因
+![](./pic/2-4 SQL Mode2.png)
+
+## 3.2 对比配置文件同MySQL运行配置参数
+
+ 产生差异的原因是使用了set命令动态地调整了参数。
+
+```mysql
+set [session | @@session.] system_var_name = expr
+set [global | @@global.] system_var_name = expr
+set [persist | @@persist.] system_var_name = expr
+```
+
+使用pt-config-diff工具比较配置文件
+
+```mysql
+pt-config-diff u=root,p=,h=localhost /etc/my.cnf
+```
+
+## 3.3 MySQL中的关键性能参数
+
+  ![](./pic/2-5 常用性能参数1.png)
+
+![](./pic/2-5 常用性能参数2.png)
+
+![](./pic/2-5 常用性能参数3.png)
 
