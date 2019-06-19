@@ -60,3 +60,72 @@ MySQL8.0版本主要的新特性
 
 ![](./pic/1-7 8.0新特性Innodb.png)
 
+# 2. MySQL用户管理常见问题
+
+## 2.1 如何在给定场景下为某用户授权
+
+### 2.1.1 定义MySQL数据库账号
+
+- 用户名@可访问控制列表(允许访问的IP)
+
+### 2.1.2 MySQL常用的用户权限
+
+![](./pic/2-1用户权限.png)
+
+![](./pic/2-2用户权限2.png)
+
+### 2.1.3 如何为用户授权
+
+- 遵循最小权限原则
+- 使用Grant命令对用户授权
+
+```mysql
+grant select, insert, update on db.tb to user@ip;
+```
+
+- 收回用户命令
+
+```mysql
+revoke delete on db.tb from user@ip;
+```
+
+
+
+## 2.2 如何保证数据库账号的安全
+
+### 2.2.1 数据库用户管理流程规范
+
+- 最小权限原则
+- 密码强度策略
+- 密码过期原则
+- 限制历史密码重用
+
+## 2.3 如何从一个实例迁移数据库账号到另一个实例
+
+![](./pic/2-3迁移账户.png)
+
+- 导出用户建立及授权语句
+
+  ```mysql
+  pt-show-grants u=root,p=123456,h=localhost
+  ```
+
+
+
+# 3. 服务器配置类问题
+
+## 3.1使用SQLMode改变SQL处理行为
+
+SQL_MODE：配置MySQL处理SQL的方式
+
+```mysql
+set [session/global/persist] sql_mode = 'xxxx'
+// persist 表示会在本地生成一个配置记录文件，下次启动会读取这个配置，设置为这个mode
+```
+
+常用的SQL Mode:
+
+![](./pic/2-4 SQL Mode1.png)
+
+### 3.1.1 分析一个Group By语句的异常原因
+
