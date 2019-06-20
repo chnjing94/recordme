@@ -153,3 +153,90 @@ pt-config-diff u=root,p=,h=localhost /etc/my.cnf
 
 ![](./pic/2-5 常用性能参数3.png)
 
+
+
+# 4. 日志类问题
+
+## 4.1 常见日志类型
+
+![](./pic/2-6 常用日志类型.png)
+
+## 4.2 错误日志(error_log)
+
+作用：
+
+- 分析排查MySQL运行错误
+- 记录未经授权的访问
+
+参数：
+
+- `log_error` = $mysql/sql_log/mysql-error.log ，设置错误日志保存地址。
+
+- `log_error_verbosity` = [1,2,3]，设置记录错误日志级别
+
+  ![](./pic/2-7 错误信息级别.png)
+
+- 8.0新增的配置参数：`log_error_services` = [日志服务组件；日志服务组件]
+
+  ![](./pic/4-2 日志服务组件.png)
+
+## 4.3 常规日志(general_log)
+
+作用：
+
+- 记录所有发向MySQL的请求
+
+参数：
+
+- `general_log` = [ON | $\color{red}{OFF}$]，开启关闭功能。
+- `general_log_file`，设置log输出目录。
+- `log_output` = [$\color{red}{FILE}$ | TABLE |NONE]，设置log存储方式。
+
+## 4.4 慢查询日志(slow_query_log)
+
+作用：
+
+- 将执行成功并符合条件的查询记录到日志中。
+- 找到需要优化的SQL。
+
+参数：
+
+- `slow_query_log` = [ON | $\color{red}{OFF}$]，开启关闭功能。
+- `slow_query_log_file`，设置log输出目录。
+- `long_query_time` = xx秒，查询执行时间大于这个值才被记录。
+- `log_queries_not_using_indexes` = [ON | $\color{red}{OFF}$]，没使用index的query。
+- `log_slow_admin_statements` = [ON | $\color{red}{OFF}$]，记录管理命令。
+- `log_slow_slave_statements` = [ON | $\color{red}{OFF}$]
+
+## 4.5 二进制日志(binary_log)
+
+作用：
+
+- 记录所有对数据库中数据的**修改**。
+- 基于时间点的备份和恢复。
+- 主从复制。
+
+参数：
+
+- `log_bin`=[=basename]，必须在配置文件里面修改。
+- `binlog_format `= [$\color{red}{ROW}$ | STATEMENTS |MIXED]，以块为单位还是以行为单位记录日志，以块为单位就记录sql语句，以行为单位就记录被影响的每一行。
+- `binlog_row_image` = [$\color{red}{FULL}$ | MINIMAL | NOBLOB]，定义row模式记录的方式，默认记录修改前和后**整行**的记录。MINIMAL模式下只记录被修改的列。NOBLOB，记录除了BLOB类的列之外修改前后的值。
+- `binlog_rows_query_log_events` = [ON | $\color{red}{OFF}$]，记录被修改的行的同时，记录下修改该行的SQL。
+- `log_slave_updates` =  [ON | $\color{red}{OFF}$]，是否记录从master机器上备份过来的bin_log。
+- `sync_binlog` = [0 | $\color{red}{1}$]，默认每写一次binlog就往磁盘上写一次。设置为0，表示由操作系统自己决定什么时候刷新。
+- `expire_logs_days` = days，bin_log过期时间，以天为单位，到期自动清理。
+- `PURGE BINARY LOGS TO 'mysql-bin.010'`，将mysql-bin.010之前的bin_log删除。
+- `PURGE BINARY LOGS BEFORE '2018-04-22 22:46:26'`，将2018-04-22 22:46:26之前的bin_log删除。
+
+## 4.6 中继日志(relay_log)
+
+只存在于主从架构中，slave上。
+
+作用：
+
+- 临时记录从主服务器同步的二进制日志。
+
+参数：
+
+- `relay_log` = filename，log存放位置。
+- `relay_log_purge` =  [ $\color{red}{ON}$ | OFF]，记录被使用之后，是否自动清理。
