@@ -286,7 +286,7 @@ MySQL常用的存储引擎
 
 - 不支持事务
 - 数据以CSV格式存储，以逗号隔开
-- 所有的列多不为NULL
+- 所有的列都不为NULL
 - 不支持索引
 
 使用场景：
@@ -357,7 +357,7 @@ MySQL常用的存储引擎
 
 ### 5.5.3 InnoDB MVCC实现方式
 
-![](/Users/jingchen/Documents/GitHub/LearningNotes/Mysql/pic/5-5 MVCC实现方式.png)
+![](./pic/5-5 MVCC实现方式.png)
 
 ## 5.6 NDB引擎
 
@@ -372,3 +372,6 @@ MySQL常用的存储引擎
 使用场景：
 
 - 需要数据完全同步的高可用场景
+
+# 6. MySQL高可用架构部署类问题
+
