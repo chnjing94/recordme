@@ -353,11 +353,11 @@ MySQL常用的存储引擎
 
 ![5-5 事务实现方式](./pic/5-5 事务实现方式.png)
 
-![](./pic/5-5 例子.png)
+
 
 ### 5.5.3 InnoDB MVCC实现方式
 
-![](./pic/5-5 MVCC实现方式.png)
+
 
 ## 5.6 NDB引擎
 
@@ -375,3 +375,30 @@ MySQL常用的存储引擎
 
 # 6. MySQL高可用架构部署类问题
 
+## 6.1 MySQL主从复制
+
+实现原理：
+
+- 异步复制：
+
+  ![6-1 主从异步复制](./pic/6-1 主从异步复制.png)
+
+- 半同步复制：
+
+  ![](./pic/6-1 主从半同步复制.png)
+
+配置步骤：
+
+在Master上的操作：
+
+1. 开启binlog，（可选）开启gtid。
+2. 建立同步所用的数据库账号。
+3. 使用mysqldump + master_data参数来备份数据库。--master_data参数会生成类似`CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000090', MASTER_LOG_POS=107;`，用来描述最新数据的binlog文件以及偏移量，mysqldump会将生成sql格式的备份文件 。
+4. 把备份文件传输到slave服务器。
+
+在Slave上的操作：
+
+1. 开启binlog(可选，如果该slave可能被提升为master)，开启gtid(可选)。
+2.  slave服务器将备份数据保存到自己库中之后，从最新数据点开始请求binlog。如果版本不一致，使用mysql_upgrade命令来检查和修复不兼容的表。（MySQL主从架构只支持slave版本高于或等于master版本的情况）
+3. 使用Change master配置链路。
+4. 使用start slave启动复制。
