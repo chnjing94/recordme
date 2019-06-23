@@ -377,28 +377,69 @@ MySQL常用的存储引擎
 
 ## 6.1 MySQL主从复制
 
-实现原理：
-
-- 异步复制：
+- 异步复制：主库将事务binlog事件写入到binlog文件中，此时主库只会通知一下Dump线程发送这些新的binlog，然后主库就会继续处理提交操作，而此时不会保证这些binlog传到任何一个从库节点上。
 
   ![6-1 主从异步复制](./pic/6-1 主从异步复制.png)
 
-- 半同步复制：
+  配置步骤：
+
+  在Master上的操作：
+
+  1. 开启binlog，（可选）开启gtid。
+  2. 建立同步所用的数据库账号。
+  3. 使用mysqldump + master_data参数来备份数据库。--master_data参数会生成类似`CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000090', MASTER_LOG_POS=107;`，用来描述最新数据的binlog文件以及偏移量，mysqldump会将生成sql格式的备份文件 。
+  4. 把备份文件传输到slave服务器。
+
+  在Slave上的操作：
+
+  1. 开启binlog(可选，如果该slave可能被提升为master)，开启gtid(可选)。
+  2. slave服务器将备份数据保存到自己库中之后，从最新数据点开始请求binlog。如果版本不一致，使用mysql_upgrade命令来检查和修复不兼容的表。（MySQL主从架构只支持slave版本高于或等于master版本的情况）
+  3. 使用Change master配置链路。
+  4. 使用start slave启动复制。
+
+- 半同步复制：半同步复制，是介于全同步复制和异步复制之间的一种，主库只需要等待至少一个从库节点收到并且Flush binlog到Relay Log文件即可，主库不需要等待所有从库给主库反馈。同时，这里只是一个收到的反馈，而不是已经完全执行并且提交的反馈，这样就节省了很多时间。
 
   ![](./pic/6-1 主从半同步复制.png)
+  
+  配置步骤：
+  
+  （先配置异步复制，再进行以下步骤）
+  
+  1. Master节点安装半同步复制插件`install plugin rpl_semi_sync_master soname 'semisync_master.so';`并开启插件`set persist rpl_semi_sync_master_enabled=on;`
+  2. Slave节点同样安装插件，注意这里安装的是slave版插件，`install plugin rpl_semi_sync_slave soname 'semisync_slave.so';`，启动插件`set persist rpl_semi_sync_slave_enabled=on;`
+  3. 如果之前slave线程已经在运行，要先停止slave线程，`stop slave;`，再`start slave user='xx' password='xxx';`
+  4. 查看配置是否成功，在master上运行`show global status like 'rpl%';`查看`Rpl_semi_sync_master_clients`的值是否等于slave的数量。在slave上运行`show global status like 'rpl%';`，查看`Rpl_semi_sync_slave_status`是否是ON。
+  
+- 全同步复制：当主库提交事务之后，所有的从库节点必须收到，APPLY并且提交这些事务，然后主库线程才能继续做后续操作。这里面有一个很明显的缺点就是，主库完成一个事务的时间被拉长，性能降低
 
-配置步骤：
+## 6.2 比较gtid复制和日志点复制
 
-在Master上的操作：
+什么是基于日志点的复制:
 
-1. 开启binlog，（可选）开启gtid。
-2. 建立同步所用的数据库账号。
-3. 使用mysqldump + master_data参数来备份数据库。--master_data参数会生成类似`CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000090', MASTER_LOG_POS=107;`，用来描述最新数据的binlog文件以及偏移量，mysqldump会将生成sql格式的备份文件 。
-4. 把备份文件传输到slave服务器。
+- 传统的主从复制方式，各个发行版都通用。可用于主从数据库使用不同发行版的场景。
+- Slave请求Master的增量日志依赖于日志偏移量。
+- 配置链路时需指定master_log_file和master_log_pos参数。
+- 在各个slave中，binlog文件和偏移量是不相同的，因此在master宕机时，需要做主从迁移的时候，很难在新的master中找到正确的二进制文件和偏移量的值。这就是要引入基于gtid复制的原因。
 
-在Slave上的操作：
+什么事基于gtid的复制： 
 
-1. 开启binlog(可选，如果该slave可能被提升为master)，开启gtid(可选)。
-2.  slave服务器将备份数据保存到自己库中之后，从最新数据点开始请求binlog。如果版本不一致，使用mysql_upgrade命令来检查和修复不兼容的表。（MySQL主从架构只支持slave版本高于或等于master版本的情况）
-3. 使用Change master配置链路。
-4. 使用start slave启动复制。
+- GTID = source_id（服务的UUID）:transaction_id（事务ID）
+- Slave增量同步Master的数据依赖于其未同步的事务ID。
+
+两种复制方式的特点：
+
+![](./pic/6-2 两种复制方式的特点.png)
+
+两种复制方式如何选择：
+
+- 需要兼容老版本MySQL及MariaDB
+- 需要使用MMM架构
+- 其他情况优先选择基于GTID的复制
+
+## 6.3 MMM和MHA两种高可用复制架构
+
+ MMM和MHA架构的作用：
+
+- 对主从复制集群中的MASTER的健康进行监控。
+- 当MASTER宕机后把写虚IP迁移到新的MASTER。
+- 重新配置集群中的其他Slave对新的MASTER同步。
