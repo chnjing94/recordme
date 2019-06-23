@@ -443,3 +443,4 @@ MySQL常用的存储引擎
 - 对主从复制集群中的MASTER的健康进行监控。
 - 当MASTER宕机后把写虚IP迁移到新的MASTER。
 - 重新配置集群中的其他Slave对新的MASTER同步。
+
