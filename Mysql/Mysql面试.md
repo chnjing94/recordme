@@ -386,16 +386,16 @@ MySQL常用的存储引擎
   在Master上的操作：
 
   1. 开启binlog，（可选）开启gtid。
-  2. 建立同步所用的数据库账号。
-  3. 使用mysqldump + master_data参数来备份数据库。--master_data参数会生成类似`CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000090', MASTER_LOG_POS=107;`，用来描述最新数据的binlog文件以及偏移量，mysqldump会将生成sql格式的备份文件 。
+  2. 建立同步所用的数据库账号，`create user repl@'172.21.0.%' identified by '123456';`并授权`GRANT REPLICATION SLAVE ON *.* to repl@'172.21.0.%';`，查看用户权限`show grants for repl@'172.21.0.%';`
+  3. 使用mysqldump + master_data参数来备份数据库`mysqldump --single-transaction -uroot -p --routines --triggers --events --master-data=2 --all-databases > master.sql` 。--master_data参数会生成类似`CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000090', MASTER_LOG_POS=107;`，用来描述最新数据的binlog文件以及偏移量，mysqldump会将生成sql格式的备份文件 。
   4. 把备份文件传输到slave服务器。
 
   在Slave上的操作：
 
   1. 开启binlog(可选，如果该slave可能被提升为master)，开启gtid(可选)。
   2. slave服务器将备份数据保存到自己库中之后，从最新数据点开始请求binlog。如果版本不一致，使用mysql_upgrade命令来检查和修复不兼容的表。（MySQL主从架构只支持slave版本高于或等于master版本的情况）
-  3. 使用Change master配置链路。
-  4. 使用start slave启动复制。
+  3. 使用Change master配置链路，`change master to master_host='172.21.0.2', master_log_file='binlog.000002', MASTER_LOG_POS=1761;`。
+  4. 使用start slave启动复制，`start slave user='repl' password='123456';`。
 
 - 半同步复制：半同步复制，是介于全同步复制和异步复制之间的一种，主库只需要等待至少一个从库节点收到并且Flush binlog到Relay Log文件即可，主库不需要等待所有从库给主库反馈。同时，这里只是一个收到的反馈，而不是已经完全执行并且提交的反馈，这样就节省了很多时间。
 
@@ -444,3 +444,40 @@ MySQL常用的存储引擎
 - 当MASTER宕机后把写虚IP迁移到新的MASTER。
 - 重新配置集群中的其他Slave对新的MASTER同步。
 
+### 6.3.1 MMM架构
+
+> MMM（Multi-Master Replication Manager for MySQL）是一套支持双主故障切换和双主日常管理的脚本程序。MMM使用Perl语言开发，主要用来监控和管理MySQL Master-Master（双主）复制，虽然叫做双主复制，但是业务上同一时刻只允许对一个主进行写入，另一台备选主上提供部分读服务，以加速在主主切换时刻备选主的预热，可以说MMM这套脚本程序一方面实现了故障切换的功能，另一方面其内部附加的工具脚本也可以实现多个slave的read负载均衡。
+
+架构图如下：
+
+![](./pic/6-3 MMM架构图.png)
+
+优点：
+
+1. 自动的主主Failover切换，提供读写虚IP的配置，使读写请求都可以做到高可用。
+
+2. 多个Slave读的负载均衡。
+3. 完成故障转移后，可以持续对MySQL集群进行高可用监控。
+
+缺点：
+
+1. 无法完全保证数据的一致性。有可能Slave上的数据比主备服务器上的数据新，当主备服务器转换为主服务器，并进行同步的时候，就会主从导致数据不一致。（解决方法：主备服务器使用5.7以后的半同步复制）
+2. 不支持GTID的复制方式，主备切换后，难以找到新的同步点。（解决方式：自行修改perl脚本实现）
+3. 社区不活跃，很久未更新版本。
+
+MMM架构的适用场景：
+
+- 适用基于日志点的主从复制方式
+- 使用主主复制的架构
+- 需要考虑读高可用的场景
+
+### 6.3.2 MHA架构
+
+MHA（Master High Availability）架构的故障转移步骤：
+
+1. 尝试从宕机的master保存二进制日志
+2. 选举具有最新数据的Slave
+3. 应用差异的中继日志到其他Slave
+4. 应用从Master保存的二进制日志
+5. 提升选举的Slave为新的Master
+6. 配置其他Slave向新的Master同步
