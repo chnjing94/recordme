@@ -381,16 +381,19 @@ MySQL常用的存储引擎
 
   配置步骤：
 
-  在Master上的操作：
+在Master上的操作：
 
-  1. 开启binlog，（可选）开启gtid。
+1. 开启binlog，（可选）开启gtid。
+
 2. 建立同步所用的数据库账号，`create user repl@'172.21.0.%' identified by '123456';`并授权`GRANT REPLICATION SLAVE ON *.* to repl@'172.21.0.%';`，查看用户权限`show grants for repl@'172.21.0.%';`
-  3. 使用mysqldump + master_data参数来备份数据库`mysqldump --single-transaction -uroot -p --routines --triggers --events --master-data=2 --all-databases > master.sql` 。--master_data参数会生成类似`CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000090', MASTER_LOG_POS=107;`，用来描述最新数据的binlog文件以及偏移量，mysqldump会将生成sql格式的备份文件 。
-  4. 把备份文件传输到slave服务器。
-  
-  在Slave上的操作：
 
-  1. 开启binlog(可选，如果该slave可能被提升为master)，开启gtid(可选)。
+3. 使用mysqldump + master_data参数来备份数据库`mysqldump --single-transaction -uroot -p --routines --triggers --events --master-data=2 --all-databases > master.sql` 。--master_data参数会生成类似`CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000090', MASTER_LOG_POS=107;`，用来描述最新数据的binlog文件以及偏移量，mysqldump会将生成sql格式的备份文件 。
+4. 把备份文件传输到slave服务器。
+
+在Slave上的操作：
+
+1. 开启binlog(可选，如果该slave可能被提升为master)，开启gtid(可选)。
+
 2. slave服务器将备份数据保存到自己库中之后，从最新数据点开始请求binlog。如果版本不一致，使用mysql_upgrade命令来检查和修复不兼容的表。（MySQL主从架构只支持slave版本高于或等于master版本的情况）
   3. 使用Change master配置链路，`change master to master_host='172.21.0.2', master_log_file='binlog.000002', MASTER_LOG_POS=1761;`。
   4. 使用start slave启动复制，`start slave user='repl' password='123456';`。
@@ -550,3 +553,15 @@ MGR缺点：
 - 对主从延迟十分敏感的应用场景。
 - 希望对读写提供高可用的场景。
 - 希望可以保证数据强一致的场景。
+
+## 6.6 解决读写负载大的问题
+
+读负载大问题：
+
+- 增加Slave服务器
+- 进行读写分离，把读分担到Slave。
+- 增加数据库中间层，进行负载均衡。
+
+写负载大问题：
+
+- 分库分表
