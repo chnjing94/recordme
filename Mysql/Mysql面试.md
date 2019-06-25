@@ -377,30 +377,26 @@ MySQL常用的存储引擎
 
 ## 6.1 MySQL主从复制
 
-- 异步复制：主库将事务binlog事件写入到binlog文件中，此时主库只会通知一下Dump线程发送这些新的binlog，然后主库就会继续处理提交操作，而此时不会保证这些binlog传到任何一个从库节点上。
-
-  ![6-1 主从异步复制](./pic/6-1 主从异步复制.png)
+- 异步复制：事务提交后，主库将更新binlog文件，此时主库只会通知一下Dump线程发送这些新的binlog，然后主库就会返回事务提交成功，而此时不会保证这些binlog传到任何一个从库节点上。
 
   配置步骤：
 
   在Master上的操作：
 
   1. 开启binlog，（可选）开启gtid。
-  2. 建立同步所用的数据库账号，`create user repl@'172.21.0.%' identified by '123456';`并授权`GRANT REPLICATION SLAVE ON *.* to repl@'172.21.0.%';`，查看用户权限`show grants for repl@'172.21.0.%';`
+2. 建立同步所用的数据库账号，`create user repl@'172.21.0.%' identified by '123456';`并授权`GRANT REPLICATION SLAVE ON *.* to repl@'172.21.0.%';`，查看用户权限`show grants for repl@'172.21.0.%';`
   3. 使用mysqldump + master_data参数来备份数据库`mysqldump --single-transaction -uroot -p --routines --triggers --events --master-data=2 --all-databases > master.sql` 。--master_data参数会生成类似`CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000090', MASTER_LOG_POS=107;`，用来描述最新数据的binlog文件以及偏移量，mysqldump会将生成sql格式的备份文件 。
   4. 把备份文件传输到slave服务器。
-
+  
   在Slave上的操作：
 
   1. 开启binlog(可选，如果该slave可能被提升为master)，开启gtid(可选)。
-  2. slave服务器将备份数据保存到自己库中之后，从最新数据点开始请求binlog。如果版本不一致，使用mysql_upgrade命令来检查和修复不兼容的表。（MySQL主从架构只支持slave版本高于或等于master版本的情况）
+2. slave服务器将备份数据保存到自己库中之后，从最新数据点开始请求binlog。如果版本不一致，使用mysql_upgrade命令来检查和修复不兼容的表。（MySQL主从架构只支持slave版本高于或等于master版本的情况）
   3. 使用Change master配置链路，`change master to master_host='172.21.0.2', master_log_file='binlog.000002', MASTER_LOG_POS=1761;`。
   4. 使用start slave启动复制，`start slave user='repl' password='123456';`。
-
-- 半同步复制：半同步复制，是介于全同步复制和异步复制之间的一种，主库只需要等待至少一个从库节点收到并且Flush binlog到Relay Log文件即可，主库不需要等待所有从库给主库反馈。同时，这里只是一个收到的反馈，而不是已经完全执行并且提交的反馈，这样就节省了很多时间。
-
-  ![](./pic/6-1 主从半同步复制.png)
   
+- 半同步复制：半同步复制，是介于全同步复制和异步复制之间的一种，主库只需要等待至少一个slave节点收到并且flush binlog到relay log文件即可，主库不需要等待所有从库给主库反馈。这里不需要slave节点apply并提交新的事务，这样就节省了很多时间。
+
   配置步骤：
   
   （先配置异步复制，再进行以下步骤）
@@ -501,3 +497,56 @@ MHA（Master High Availability）架构的故障转移步骤：
 - 使用GTID的复制方式
 - 使用一主多从的复制架构
 - 希望更少的数据丢失的场景
+
+## 6.4 减少主从复制延迟
+
+延迟产生原因：
+
+- 大事务执行时间太长
+- 网络延迟
+- Master节点上是并发写入，而salve节点从relay log中恢复数据是单线程的。
+
+解决方法：
+
+- 将大事务分解为小事务，使用pt-online-schema-change工具进行ddl操作。
+- 减少单次事务处理的数据量，采用最小row格式（只存储被修改的列）存储二进制日志。
+- 减少主上所同步的slave数量
+- 5.7后，slave节点采用多线程复制来恢复数据。
+- 采用MGR复制架构
+
+## 6.5 MGR复制集群
+
+MGR（MySQL Group Replication）是MySQL官方推出的一种基于Paxos协议的复制。在MGR出现之前，用户常见的MySQL高可用方式，无论怎么变化架构，本质就是Master-Slave架构。MySQL 5.7版本开始支持无损半同步复制（lossless semi-sync replication），从而进一步提示数据复制的强一致性。
+
+
+
+MGR单主模式（默认模式）：
+
+![](./pic/6-5 MGR单主模式.png)
+
+MGR多主模式：
+
+![](./pic/6-5 MGR多主模式.png)
+
+- 集群大小最大支持9台服务器
+- 集群大小 >= 允许宕机数量 * 2 + 1
+
+
+
+MGR优点：
+
+- Group Replication组内成员间基本无延迟。
+- 可以支持多写模式，读写高可用。
+- 数据强一致性，可以保证不丢失事务。
+
+MGR缺点：
+
+- 只支持innodb存储引擎的表，并且每个表上必须有一个主键。
+- 单主模式下很难确认下一个Primary。
+- 只能用在gtid模式的复制形式下，且日志格式必须为row。
+
+适用场景：
+
+- 对主从延迟十分敏感的应用场景。
+- 希望对读写提供高可用的场景。
+- 希望可以保证数据强一致的场景。
