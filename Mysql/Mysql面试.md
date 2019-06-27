@@ -629,3 +629,7 @@ xtrabackup的缺点：
 
 - 使用cp命令将binlog复制到备份节点
 - 使用`mysqlbinlog`命令，能够持续不断地从目标服务器上备份binlog。
+
+# 9. MySQL优化及异常处理
+
+ 
