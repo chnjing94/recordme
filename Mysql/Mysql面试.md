@@ -630,6 +630,65 @@ xtrabackup的缺点：
 - 使用cp命令将binlog复制到备份节点
 - 使用`mysqlbinlog`命令，能够持续不断地从目标服务器上备份binlog。
 
+# 8. MySQL管理及监控类问题
+
+## 8.1 常见监控指标
+
+- 性能类指标
+
+  ![](./pic/8-1性能指标.png)
+
+- 功能类指标
+
+  ![](./pic/8-2功能类指标.png)
+
+## 8.2 QPS和TPS
+
+- 使用命令`show global status where variable_name in ('Queries', 'uptime');`来获取当前的请求量和时间。在两个时间点记录各自的数据，就可以计算出这段时间的QPS。
+- `show global status where variable_name in ('com_insert', 'com_delete', 'com_update');`
+- Tc约等于com_insert + com_delete + com_update
+
+## 8.3 数据库并发数和数据库连接数
+
+- `show global status like 'Threads_running'`，查询数据库并发数。
+- `show global status like 'Threads_connected'`，查询当前连接数。
+- Threads_connected / max_connections > 0.8，为报警阈值。
+
+## 8.4 Innodb缓存命中率
+
+- `innodb_buffer_pool_read_requests`：从缓存池中读取的次数，也是全部读取请求的数量。
+- `innodb_buffer_pool_reads `：从物理磁盘读取的次数。
+- 命中率等于(innodb_buffer_pool_read_requests - innodb_buffer_pool_reads) / innodb_buffer_pool_read_requests
+
+## 8.5 数据库可用性
+
+- 周期性连接数据库服务器并执行select @@version;
+- `mysqladmin -uxxx -pxxxx -hxxxx ping`
+
+## 8.6 阻塞
+
+![](./pic/8-6阻塞查询.png)
+
+## 8.9 死锁 
+
+- `show engine innodb status`查看最近一次发生的死锁
+- pt-deadlock-logger命令，可以将死锁信息存储到表中。
+- set global innodb_print_all_deadlocks=on;将死锁记录到错误日志中。
+
+## 8.8 慢查询
+
+- 通过慢查询日志
+- 通过information_schama.processlist表实时监控
+
+## 8.9 主从延迟
+
+- 通过`show slave status`，并查看`Seconds_Behind_master`的值，来查看延迟。
+- 通过pt-heartbeat命令，在主库新建一张表，插入当前时间信息，开另外一个线程读取新的数据，比较延迟。
+
+## 8.10 主从状态
+
+- 通过`show slave status`，并查看`Slave_IO_Running`和`Slave_SQL_Running`的值，来查看主从状态。
+
 # 9. MySQL优化及异常处理
 
  ## 9.1 服务器负载过大
