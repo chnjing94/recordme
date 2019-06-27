@@ -16,7 +16,7 @@
 
 ![](./pic/1-1服务器特性.png)
 
-![](./pic/1-2 高可用.png)
+![](./pic/1-2高可用.png)
 
 ![](./pic/1-3安全特性.png)
 
@@ -56,7 +56,7 @@ MySQL8.0版本主要的新特性
 
 ![](./pic/1-58.0新特性.png)
 
-![](./pic/1-6 8.0新特性安全.png)
+![](./pic/1-68.0新特性安全.png)
 
 ![](./pic/1-7 8.0新特性Innodb.png)
 
@@ -125,9 +125,9 @@ set [session/global/persist] sql_mode = 'xxxx'
 
 常用的SQL Mode:
 
-![](./pic/2-4 SQL Mode1.png)
+![](./pic/2-4SQL Mode1.png)
 
-![](./pic/2-4 SQL Mode2.png)
+![](./pic/2-4SQL Mode2.png)
 
 ## 3.2 对比配置文件同MySQL运行配置参数
 
@@ -147,11 +147,11 @@ pt-config-diff u=root,p=,h=localhost /etc/my.cnf
 
 ## 3.3 MySQL中的关键性能参数
 
-  ![](./pic/2-5 常用性能参数1.png)
+  ![](./pic/2-5常用性能参数1.png)
 
-![](./pic/2-5 常用性能参数2.png)
+![](./pic/2-5常用性能参数2.png)
 
-![](./pic/2-5 常用性能参数3.png)
+![](./pic/2-5常用性能参数3.png)
 
 
 
@@ -159,7 +159,7 @@ pt-config-diff u=root,p=,h=localhost /etc/my.cnf
 
 ## 4.1 常见日志类型
 
-![](./pic/2-6 常用日志类型.png)
+![](./pic/2-6常用日志类型.png)
 
 ## 4.2 错误日志(error_log)
 
@@ -174,11 +174,11 @@ pt-config-diff u=root,p=,h=localhost /etc/my.cnf
 
 - `log_error_verbosity` = [1,2,3]，设置记录错误日志级别
 
-  ![](./pic/2-7 错误信息级别.png)
+  ![](./pic/2-7错误信息级别.png)
 
 - 8.0新增的配置参数：`log_error_services` = [日志服务组件；日志服务组件]
 
-  ![](./pic/4-2 日志服务组件.png)
+  ![](./pic/4-2日志服务组件.png)
 
 ## 4.3 常规日志(general_log)
 
@@ -337,7 +337,7 @@ MySQL常用的存储引擎
 
 ### 5.5.1 Innodb不支持在线修改表结构的场景：
 
-![img](./pic/5-5 innodb不支持在线修改表场景.png)
+![img](./pic/5-5innodb不支持在线修改表场景.png)
 
 在线DDL存在的问题：
 
@@ -351,7 +351,7 @@ MySQL常用的存储引擎
 
 ### 5.5.2 Innodb如何实现事务：
 
-![5-5 事务实现方式](./pic/5-5 事务实现方式.png)
+![5-5 事务实现方式](./pic/5-5事务实现方式.png)
 
 
 
@@ -427,7 +427,7 @@ MySQL常用的存储引擎
 
 两种复制方式的特点：
 
-![](./pic/6-2 两种复制方式的特点.png)
+![](./pic/6-2两种复制方式的特点.png)
 
 两种复制方式如何选择：
 
@@ -449,7 +449,7 @@ MySQL常用的存储引擎
 
 架构图如下：
 
-![](./pic/6-3 MMM架构图.png)
+![](./pic/6-3MMM架构图.png)
 
 优点：
 
@@ -472,7 +472,7 @@ MMM架构的适用场景：
 
 ### 6.3.2 MHA架构
 
-![](./pic/6-3 MHA架构图.png)
+![](./pic/6-3MHA架构图.png)
 
 MHA（Master High Availability）架构的故障转移步骤：
 
@@ -525,11 +525,11 @@ MGR（MySQL Group Replication）是MySQL官方推出的一种基于Paxos协议�
 
 MGR单主模式（默认模式）：
 
-![](./pic/6-5 MGR单主模式.png)
+![](./pic/6-5MGR单主模式.png)
 
 MGR多主模式：
 
-![](./pic/6-5 MGR多主模式.png)
+![](./pic/6-5MGR多主模式.png)
 
 - 集群大小最大支持9台服务器
 - 集群大小 >= 允许宕机数量 * 2 + 1
@@ -572,17 +572,17 @@ MGR缺点：
 
 - 逻辑备份和物理备份：
 
-  ![](./pic/7-1 两种备份方式.png)
+  ![](./pic/7-1两种备份方式.png)
 
   逻辑备份可读性和可移植行好，但是慢。物理备份要求目标环境和备份前环境完全一样，优点是速度快。
 
 - 全量备份和增量备份以及差异备份：
 
-  ![](./pic/7-1 全量备份.png)
+  ![](./pic/7-1全量备份.png)
 
 ## 7.2 常用备份工具
 
-![](./pic/7-2 常用备份工具.png)
+![](./pic/7-2常用备份工具.png)
 
  mysqldump优点：
 
