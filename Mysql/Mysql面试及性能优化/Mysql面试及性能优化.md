@@ -922,3 +922,17 @@ Memory存储引擎默认使用引擎，innodb使用自适应hash索引（不需�
 - hash索引中hash码的计算可能存在hash冲突
 
 ## 12.2 索引优化策略
+
+sql语句里，在索引列上不能使用表达式或函数
+
+```sql
+select * from product where to_days(out_date)-to_days(current_date) <= 30
+//该为
+select * from product where out_date<=date_add(current_date, interval 30 day)
+```
+
+联合索引的选择顺序：
+
+- 经常被使用的列优先
+- 选择性高的列优先
+
