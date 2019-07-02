@@ -935,4 +935,10 @@ select * from product where out_date<=date_add(current_date, interval 30 day)
 
 - 经常被使用的列优先
 - 选择性高的列优先
+- 宽度小的列优先
+
+模拟hash索引优化查询
+
+- 只能处理键值得全值匹配查找
+- 所用的hash函数觉得着索引键的大小
 
