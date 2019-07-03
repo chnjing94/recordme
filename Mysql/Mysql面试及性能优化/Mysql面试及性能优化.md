@@ -942,3 +942,15 @@ select * from product where out_date<=date_add(current_date, interval 30 day)
 - 只能处理键值得全值匹配查找
 - 所用的hash函数觉得着索引键的大小
 
+# 13. 分库分表
+
+## 13.1 数据库分片
+
+如何选择分区键：
+
+- 分区键要能尽量避免跨分片查询的发生
+- 分区键要能尽量使各个分片中的数据平均
+
+如何生成全局唯一ID
+
+- 在Redis等缓存服务器中创建全局ID 
