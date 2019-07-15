@@ -453,3 +453,87 @@ LSN表示事务写入重做日志的字节总量，例如当前重做日志的LS
 LSN不仅记录在重做日志中，也存在于每个页中。在每个页的头部有一个值，FIL_PAGE_LSN，记录了该页的LSN，表示该页最后刷新时LSN的大小。因为重做日志记录的是每个页的日志，因此页中的LSN用来判断页是否需要进行恢复操作。
 
 InnoDB在启动时，不管上次数据库是否正常关闭，都会尝试进行恢复操作。由于checkpoint表示已刷新到磁盘上的LSN，因此在恢复过程中仅需恢复checkpoint开始的日志部分。
+
+### 7.2.2 undo
+
+- undo log用于将数据回滚到修改之前的样子。
+- undo存放在数据库内一个特殊段中，称为undo段，其位于共享表空间内。
+- undo是逻辑日志，并非物理日志，与redo log不同。对于每个insert操作，undo log里就是一个delete操作。对于每个delete操作，对应一个insert操作。对于每个update，undo会执行一个相反的update，将修改的行放回去。
+- 除了回滚，undo另一个作用是MVCC，当用户读取一行记录时，可以通过undo读取该行之前的数据版本，以此实现非锁定读取。
+- 写入undo log的过程同样需要写入重做日志。
+
+
+
+undo存储管理
+
+- InnoDB有rollback segment，每个当中记录了1024个undo log segment，在每个undo log segment段中进行undo页的申请。
+
+- `innodb_undo_directory`用于设置rollback segment文件所在路径。可以将rollback segment放在共享表空间以外的位置。
+- `innodb_undo_logs`用来设置rollback segment的个数，默认为128个。
+- `innodb_undo_tablespaces`用来设置构成rollback segment文件的数量，这样回滚段可以较为平均地分布在多个文件中。
+
+当事务提交时，InnoDB存储引擎会做以下两件事情：
+
+- 将undo log放入一个链表中，以供之后的purge操作。不能在事务提交后立即删除undo log，因为可能还有其他事务需要通过undo log来得到该记录之前的版本。
+- 判断undo log所在页是否可以重用，若可以分配给下个事务。为了节省空间，需要对undo log重用。首先将undo log放入链表中，然后判断undo页的使用空间是否小于3/4，如果是，则该页可以被重用，之后新的undo log记录在当前undo log之后，所以同一个undo页可能存放不同事务的undo log。
+
+
+
+undo log格式
+
+undo log分为：
+
+- insert undo log，指的是在insert操作中产生的undo log，因为insert操作的记录只对事务本身可见，对其他事务不可见，因此这种undo log在事务提交后直接删除。不需要进行purge操作。
+- update undo log，记录delete和update操作产生的undo log。该undo log可能需要提供MVCC机制，因此不能在事务提交时就进行删除。提交时放入undo log链表，等待purge线程进行最后的删除。
+
+
+
+delete操作并不直接删除记录，而是将记录标记为已删除，也就是将delete flag设置为1。而记录的最终删除是在purge操作中完成的。
+
+对于update操作，如果是对非主键的更新，就直接更新。而对于主键的更新，先标记该记录为删除，再插入新的数据。
+
+### 7.2.3 purge
+
+- purge用于最终完成delete和update操作。之所以不在事务提交时删除undo log，而是在purge阶段，是因为要支持MVCC。
+
+- InnoDB中有一个history列表，根据事务提交的顺序，将undo log进行链接。
+
+- 在执行purge的过程中，先从history中找到第一个需要被清理的记录，这里为trx1，清理之后在当前undo页继续寻找是否存在可以被清理的记录，如果有，继续清理，如果没有，则回到history列表继续寻找。当一个undo页中的页都被清理了，该undo 页可以被重用。
+
+- 之所以这样设计清理顺序，是为了避免大量的随机读取操作，从而提高purge的效率。
+- `innodb_purge_batch_size`用来设置每次purge操作需要清理的undo page数量，1.2之后，默认为300，设置得越大，每次回收的undo page也就越多。但是设置过大，会增加IO压力，使性能下降。
+- 当存储引擎压力特别大时，history的长度会越来越长，`innodb_max_purge_lag`用来控制history list的长度，如果长度大于该参数，会延缓DML的操作。
+
+### 7.2.4 group commit
+
+对于非只读事务，每次事务提交时需要进行一次fsync操作，以此保证重做日志都已写入磁盘。但是fsync性能是有限的，为了提高磁盘fsync的效率，数据库提供了group commit功能，即一次fsync可以确保多个事务日志被写入磁盘。
+
+为了保障存储引擎层中的事务和二进制日志的一致性，二者之间使用了两阶段事务，步骤如下：
+
+1. 当事务提交时InnoDB存储引擎进行prepare操作。
+
+2. MySQL数据库上层写入二进制日志。
+
+3. InnoDB存储引擎层将日志写入重做日志文件。
+
+   a) 修改内存中事务对应的信息，写就是写脏页，并且将日志写入重做日志缓冲。
+
+   b) 调用fsync将确保日志都从重做日志缓冲写入磁盘。
+
+一旦步骤2中的操作完成，就确保了事务的提交，即使在执行步骤3时数据库发生了宕机。需要注意，每个步骤都需要进行一次fsync操作才能保证上下两层数据的一致性。步骤2的fsync由参数`sync_binlog`控制，步骤3的fsync由参数`innodb_flush_log_at_trx_commit`控制。
+
+为了保证MySQL数据库上层二进制日志的写入顺序和InnoDB层的事务提交顺序一致1，使用了`prepare_commit_mutex`这个锁。但是在启用这个锁以后，步骤3中的步骤a就不可以在其他事务执行步骤b时进行，从而导致group commit失效。
+
+MySQL 5.6采用了新的实现方式，Binart Log Group Commit(BLGC)，让二进制日志写入是group commit的，innoDB存储引擎层也是group commit的，还移除了之前的prepare_commit_mutex，从而大大提高了数据库整体性能。
+
+BLGC实现方式是将事务提交的过程分为几个步骤来完成
+
+![](./pic/7-4BLGC实现方式.png)
+
+在数据库上层进行提交时首先按顺序放入一个队里中，队列中的第一个事务称为leader，其他事务称为follower，leader控制着follower的行为。BLGC分为以下三个步骤：
+
+- Flush阶段，将每个事务的二进制日志写入内存。
+- Sync阶段，将内存中的二进制日志刷新到磁盘，如果队列中有多个事务，那么仅一次fsync就完成了二进制日志的写入。
+- Commit阶段，leader根据顺序调用存储引擎层事务的提交，InnoDB本就支持group commit，因此修复了原先锁导致的group commit失效的问题。
+
+当有一组事务在进行Commit阶段时，其他新事务可以进行Flush阶段，从而使group commit不断生效。`binlog_max_flush_queue_time`用来控制Flush阶段中等待的实际，即使之前的一组事务完成提交，当前一组的事务也不马上进入Sync阶段，而是至少等待一段时间。这样做好处是group commit的事务数量更多，坏处是使事务的响应时间变慢。默认值是0，推荐也是0，除非有大量的连接不断进行事务的写入或更新操作。
