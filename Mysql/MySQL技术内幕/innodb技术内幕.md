@@ -522,7 +522,11 @@ delete操作并不直接删除记录，而是将记录标记为已删除，也�
 
 一旦步骤2中的操作完成，就确保了事务的提交，即使在执行步骤3时数据库发生了宕机。需要注意，每个步骤都需要进行一次fsync操作才能保证上下两层数据的一致性。步骤2的fsync由参数`sync_binlog`控制，步骤3的fsync由参数`innodb_flush_log_at_trx_commit`控制。
 
-为了保证MySQL数据库上层二进制日志的写入顺序和InnoDB层的事务提交顺序一致1，使用了`prepare_commit_mutex`这个锁。但是在启用这个锁以后，步骤3中的步骤a就不可以在其他事务执行步骤b时进行，从而导致group commit失效。
+为了保证MySQL数据库上层二进制日志的写入顺序和InnoDB层的事务提交顺序一致，使用了`prepare_commit_mutex`这个锁。但是在启用这个锁以后，步骤3中的步骤a就不可以在其他事务执行步骤b时进行，从而导致group commit失效。
+
+为什么二进制日志的写入要和事务提交顺序一致，是为了备份及恢复的需要。
+
+
 
 MySQL 5.6采用了新的实现方式，Binart Log Group Commit(BLGC)，让二进制日志写入是group commit的，innoDB存储引擎层也是group commit的，还移除了之前的prepare_commit_mutex，从而大大提高了数据库整体性能。
 
