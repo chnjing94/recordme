@@ -599,7 +599,7 @@ InnoDB存储引擎中的事务完全符合ACID特性：
 
 ## 7.2 事务的实现
 
-事务的隔离性由锁来实现（MVCC是一种行锁的实现方式，MVCC实现了读已提交和可重复读两个级别）。redo log用来保证事务的原子性和持久性。undo log用来保证事务的一致性。
+事务的隔离性由锁来实现（MVCC是一种行锁的实现方式，MVCC实现了读已提交和可重复读两个级别）。redo log和undo log用来保证事务的原子性。undo log用来保证事务的一致性。redo log用来保证持久性。
 
 ### 7.2.1 redo
 
@@ -624,6 +624,8 @@ redo log和binlog有很大不同：
   ![](./pic/7-2binlog和redolog写入时间点.png)
 
   因为事务的重做日志写入是并发的，所以在文件中记录的顺序并非是事务开始的顺序。
+  
+- redo log是幂等的，而binlog不是。
 
 
 
@@ -661,7 +663,7 @@ InnoDB在启动时，不管上次数据库是否正常关闭，都会尝试进�
 
 undo存储管理
 
-- InnoDB有rollback segment，每个当中记录了1024个undo log segment，在每个undo log segment段中进行undo页的申请。
+- InnoDB有rollback segment，每个段中记录了1024个undo log segment，在每个undo log segment段中进行undo页的申请。
 
 - `innodb_undo_directory`用于设置rollback segment文件所在路径。可以将rollback segment放在共享表空间以外的位置。
 - `innodb_undo_logs`用来设置rollback segment的个数，默认为128个。
@@ -723,7 +725,7 @@ delete操作并不直接删除记录，而是将记录标记为已删除，也�
 
 
 
-MySQL 5.6采用了新的实现方式，Binart Log Group Commit(BLGC)，让二进制日志写入是group commit的，innoDB存储引擎层也是group commit的，还移除了之前的prepare_commit_mutex，从而大大提高了数据库整体性能。
+MySQL 5.6采用了新的实现方式，Binary Log Group Commit(BLGC)，让二进制日志写入是group commit的，innoDB存储引擎层也是group commit的，还移除了之前的prepare_commit_mutex，从而大大提高了数据库整体性能。
 
 BLGC实现方式是将事务提交的过程分为几个步骤来完成
 
