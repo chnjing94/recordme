@@ -140,7 +140,7 @@ bitfield指令用于一次处理多个位的操作，最多同时处理64位。
 
 incrby用来对指定范围的位进行自增操作。对于溢出，Redis默认是折返，如果溢出，会将溢出的符号位丢掉。bitfield提供了溢出策略子命令overflow，可以选择失败(fail)以及饱和截断(sat)，饱和截断就是保持最大值 。
 
-### 1.5 HyperLogLog
+##1.5 HyperLogLog
 
 HyperLogLog是一种set，提供不精确的去重技术方案，标准误差是0.81%，每个HyperLogLog占用12K的内存。
 
