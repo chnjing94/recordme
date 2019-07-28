@@ -245,7 +245,7 @@ pt-config-diff u=root,p=,h=localhost /etc/my.cnf
 
 MySQL常用的存储引擎
 
-![5-0 MySQL常用存储引擎](./pic/5-0 MySQL常用存储引擎.png)
+![5-0 MySQL常用存储引擎](./pic/5-0MySQL常用存储引擎.png)
 
 ## 5.1 MyISAM引擎
 
@@ -344,14 +344,6 @@ MySQL常用的存储引擎
 
 - `pt-online-schema-change [OPTIONS] DSN`
 
-### 5.5.2 Innodb如何实现事务：
-
-![5-5 事务实现方式](./pic/5-5事务实现方式.png)
-
-
-
-### 5.5.3 InnoDB MVCC实现方式
-
 ### 5.5.4 表空间
 
 - 表数据可以选择存储在独立表空间（每个表的数据单独存放为一个文件），和系统表空间（所有的表数据存放在同一个文件中）。
@@ -384,7 +376,7 @@ MySQL常用的存储引擎
 
 - 异步复制：事务提交后，主库将更新binlog文件，此时主库只会通知一下Dump线程发送这些新的binlog，然后主库就会返回事务提交成功，而此时不会保证这些binlog传到任何一个从库节点上。
 
-  配置步骤：
+配置步骤：
 
 在Master上的操作：
 
@@ -400,9 +392,8 @@ MySQL常用的存储引擎
 1. 开启binlog(可选，如果该slave可能被提升为master)，开启gtid(可选)。
 
 2. slave服务器将备份数据保存到自己库中之后，从最新数据点开始请求binlog。如果版本不一致，使用mysql_upgrade命令来检查和修复不兼容的表。（MySQL主从架构只支持slave版本高于或等于master版本的情况）
-  3. 使用Change master配置链路，`change master to master_host='172.21.0.2', master_log_file='binlog.000002', MASTER_LOG_POS=1761;`。
-  4. 使用start slave启动复制，`start slave user='repl' password='123456';`。
-  
+3. 使用Change master配置链路，`change master to master_host='172.21.0.2', master_log_file='binlog.000002', MASTER_LOG_POS=1761;`。
+4. 使用start slave启动复制，`start slave user='repl' password='123456';`。
 - 半同步复制：半同步复制，是介于全同步复制和异步复制之间的一种，主库只需要等待至少一个slave节点收到并且flush binlog到relay log文件即可，主库不需要等待所有从库给主库反馈。这里不需要slave节点apply并提交新的事务，这样就节省了很多时间。
 
   配置步骤：
@@ -414,7 +405,7 @@ MySQL常用的存储引擎
   3. 如果之前slave线程已经在运行，要先停止slave线程，`stop slave;`，再`start slave user='xx' password='xxx';`
   4. 查看配置是否成功，在master上运行`show global status like 'rpl%';`查看`Rpl_semi_sync_master_clients`的值是否等于slave的数量。在slave上运行`show global status like 'rpl%';`，查看`Rpl_semi_sync_slave_status`是否是ON。
   
-- 全同步复制：当主库提交事务之后，所有的从库节点必须收到，APPLY并且提交这些事务，然后主库线程才能继续做后续操作。这里面有一个很明显的缺点就是，主库完成一个事务的时间被拉长，性能降低
+- 全同步复制：当主库提交事务之后，所有的从库节点必须收到，APPLY并且提交这些事务，然后主库线程才能继续做后续操作。这里面有一个很明显的缺点就是，主库完成一个事务的时间被拉长，性能降低。
 
 ## 6.2 比较gtid复制和日志点复制
 
