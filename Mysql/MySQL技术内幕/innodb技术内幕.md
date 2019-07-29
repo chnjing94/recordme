@@ -627,6 +627,8 @@ redo log和binlog有很大不同：
   
 - redo log是幂等的，而binlog不是。
 
+- redo log是循环写的，而binlog是追加写。
+
 
 
 redo log格式：
