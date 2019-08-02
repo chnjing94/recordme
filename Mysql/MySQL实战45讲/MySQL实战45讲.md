@@ -17,6 +17,31 @@ mysql> update T set c=c+1 where ID=2;
 
 两阶段提交的目的是为了保证数据库的状态和用它的日志恢复出来的库的状态一致，如果没有两阶段提交，无论先写binlog还是先写redo log，在系统崩溃的情况下，都会出错。
 
+
+
+如果在写入redo log之后，在写binlog之前，发生宕机，重启之后，因为redo log没有提交，binlog还没有写，因此这个事务会回滚。
+
+在写入binlog之后，提交事务之前宕机，重启之后：
+
+1. 如果redo log里面的事务是完整的，也就是有了commit标识，则直接提交。
+2. 如果redo log里的事务只有完整的prepare，则判断对应事务的binlog是否存在并完整
+   - 如果是，则提交事务。
+   - 否则，回滚事务。
+
+**如何知道一个事务binlog是完整的？**
+
+statement格式的binlog，末尾会有一个COMMIT。row 格式的binlog，最后会有一个XID event。还有binlog-checksum参数来验证其正确性。
+
+**redo log和binlog怎么关联起来?**
+
+他们有一个共同的数据字段，叫做XID。
+
+**只用binlog能否支持崩溃恢复？**
+
+
+
+
+
 # 3. 事务隔离
 
 ## 视图
