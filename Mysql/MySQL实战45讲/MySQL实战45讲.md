@@ -38,9 +38,11 @@ statement格式的binlog，末尾会有一个COMMIT。row 格式的binlog，最�
 
 **只用binlog能否支持崩溃恢复？**
 
+不能，MySQL以前的默认引擎是MyISAM引擎，没有redo log，而binlog是一直都有的，但是不支持崩溃恢复。binlog没有能力恢复数据页，因为宕机之后，不知道哪些binlog需要重做。
 
+**只用redo log，不用binlog行不行？**
 
-
+不行，binlog才能实现归档功能，但redo log因为是循环写，历史日志无法保留，因此起不到归档的作用。
 
 # 3. 事务隔离
 
