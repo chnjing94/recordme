@@ -168,7 +168,7 @@ Online DDL的步骤如下：
 1. 快照读：在事务中，简单的select操作。通过MVCC和undo log页来实现的。
 2. 当前读：总是读取最新的。
    - select ... lock in share mode，加读锁，加next-key锁。
-   - select ... for update，加写锁，加next-key锁。
+   - select ... for update，加写锁，加next-key锁。某些场景下，比lock in share mode加锁范围还大，比如lock in share mode只需要在普通索引上加锁，for update会在主键索引上也加上锁。
    - insert
    - update
    - delete
@@ -178,3 +178,8 @@ Online DDL的步骤如下：
 ## 幻读
 
 在一个隔离级别为RR的事务中，前后两次同样的查询，查出不同的数据，而且这个数据是新插入的这种才算幻读。
+
+# 21. 加锁方式
+
+- 只在索引上加锁
+- 只对访问到的对象加锁，比如给记录加读锁，查询只需要辅助索引，那么只会在该索引上加锁。
