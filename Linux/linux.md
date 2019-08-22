@@ -65,9 +65,9 @@ TASK_STOPPED是进程在收到SIGSTOP，SIGTSTP或者SIGTTOU信号之后进入�
 
 还有一些状态，我们称为标志。放在flags字段中，这些字段被定义为宏，以PF开头。例如
 
-```
-#define PF_EXITING		0x00000004
-#define PF_VCPU			0x00000010
+```c
+#define PF_EXITING			0x00000004
+#define PF_VCPU					0x00000010
 #define PF_FORKNOEXEC		0x00000040
 ```
 
@@ -175,3 +175,180 @@ void  *stack;
 ```
 
 stack表示内核栈，进程在内核运行时，需要切换到内核栈。thread_info用来存储CPU上下文切换的信息。详见进程切换章节。
+
+## 1.2 创建进程
+
+###1.2.1 fork
+
+在linux中，怎么创建进程呢？是使用fork()系统调用。内部的调用过程为fork -> sys_fork -> _do_fork，sys_fork的定义如下：
+
+```c
+SYSCALL_DEFINE0(fork)
+{
+......
+	return _do_fork(SIGCHLD, 0, 0, NULL, NULL, 0);
+}
+```
+
+sys_fork又会去调用_do_fork，
+
+```c
+long _do_fork(unsigned long clone_flags,
+	      unsigned long stack_start,
+	      unsigned long stack_size,
+	      int __user *parent_tidptr,
+	      int __user *child_tidptr,
+	      unsigned long tls)
+{
+	struct task_struct *p;
+	int trace = 0;
+	long nr;
+
+
+......
+	p = copy_process(clone_flags, stack_start, stack_size,
+			 child_tidptr, NULL, trace, tls, NUMA_NO_NODE);
+......
+	if (!IS_ERR(p)) {
+		struct pid *pid;
+		pid = get_task_pid(p, PIDTYPE_PID);
+		nr = pid_vnr(pid);
+
+
+		if (clone_flags & CLONE_PARENT_SETTID)
+			put_user(nr, parent_tidptr);
+
+
+......
+		wake_up_new_task(p);
+......
+		put_pid(pid);
+	} 
+......
+```
+
+这里主要做了两件事，`copy_process`复制结构和`wake_up_new_task`唤醒线程。
+
+### 1.2.2 copy_process
+
+复制父进程就是复制它的进程描述符task_struct，按照下图逐一解释复制过程。
+
+![](./pic/1-task_struct.png)
+
+- 整体
+
+  - 先调用alloc_task_struct_node，分配一个task_struct结构。
+  - 调用memcpy将父进程的task_struct进程复制。
+  - 此时所有的成员变量都指向父进程对应的值，也就是共用父进程的数据，之后一步步地创建自己的数据，与父进程彻底隔绝。
+
+- 内核栈
+
+  - 调用alloc_thread_stack_node，分配内存空间并创建一个栈赋值给task_struct的 void *stack成员变量。
+  - 调用setup_thread_stack设置thread_info。
+
+- 权限
+
+  - 调用prepare_creds，在内存中分配一个新的struct cred结构，然后调用memcpy复制一份父进程的cred。
+  - 将新进程的read_cred和cred都指向这个新创建的cred。
+
+- 运行统计
+
+  初始化变量值。
+
+  ```c
+  p->utime = p->stime = p->gtime = 0;
+  p->start_time = ktime_get_ns();
+  p->real_start_time = ktime_get_boot_ns();
+  ```
+
+- 调度相关
+
+  - 调用__sched_fork，将on_rq设为0，初始化shed_entity，shed_entity的定义如下
+
+    ```c
+    struct sched_entity {
+    	struct load_weight		load;
+    	struct rb_node			run_node;
+    	struct list_head		group_node;
+    	unsigned int			on_rq;
+    	u64				exec_start;
+    	u64				sum_exec_runtime;
+    	u64				vruntime;
+    	u64				prev_sum_exec_runtime;
+    	u64				nr_migrations;
+    	struct sched_statistics		statistics;
+    ......
+    };
+    ```
+
+    初始化shed_entity就是把exec_start，sum_exec_runtime等涉及进程运行时间置零。
+
+  - 设置进程的状态p->state设置为TASK_NEW。
+
+  - 初始化优先级
+
+  - 设置调度类，如果是普通进程，则设置sched_class = &fair_sched_class，公平调度。
+
+  - 调用调度类的task_fork函数，将子进程和父进程的vruntime设为一样，这样就能防止父进程通过不断新建子进程来占用cpu。如果设置了让子进程先行，调用resched_curr，标记当前运行的进程TIF_NEED_RESCHED，这样下次调度的时候，父进程会被子进程抢占。
+
+- 文件与文件系统
+
+  ```c
+  retval = copy_files(clone_flags, p);
+  retval = copy_fs(clone_flags, p);
+  ```
+
+  copy_files是复制父进程打开的文件信息，这些信息存在一个结构files_struct中，每个打开的文件都有一个文件描述符。这里创建一个新的files_struct，然后将所有的文件描述符数组fdtable拷贝一份。
+
+  copy_fs用于复制一个进程的目录信息，这些目录信息包括进程自己的根目录，根文件系统root，也有当前目录pwd，和当前目录的文件系统。
+
+- 信号相关
+
+  ```c
+  init_sigpending(&p->pending);
+  retval = copy_sighand(clone_flags, p);
+  retval = copy_signal(clone_flags, p);
+  ```
+
+  copy_sighand会分配一个新的sighand_struct，主要是维护信号处理函数。然后调用memcpy将信号处理函数从父进程复制到子进程。
+
+  copy_singal用于复制和维护发给这个进程的信号的数据结构。
+
+- 内存空间
+
+  ```c
+  retval = copy_mm(clone_flags, p);
+  ```
+
+  进程都有自己的内存空间，用mm_struct结构来表示。copy_mm函数中调用dup_mm分配一个新的mm_struct结构。
+
+- 任务ID
+
+  - 分配pid，设置tid，group_leader。
+  - 建立进程直接的亲缘关系。
+
+至此，copy_process就结束了。
+
+### 1.2.3 wake_up_new_task
+
+新创建的进程，需要做些工作，才可能去抢占CPU。wake_up_new_task定义如下，
+
+```c
+void wake_up_new_task(struct task_struct *p)
+{
+	struct rq_flags rf;
+	struct rq *rq;
+......
+	p->state = TASK_RUNNING;
+......
+	activate_task(rq, p, ENQUEUE_NOCLOCK);
+	p->on_rq = TASK_ON_RQ_QUEUED;
+	trace_sched_wakeup_new(p);
+	check_preempt_curr(rq, p, WF_FORK);
+......
+}
+```
+
+1. 将state设置为TASK_RUNNING。
+2. activate_task函数会调用enqueue_task，将进程放到运行队列里面，每个CPU有自己的多个运行队列，一个进程只能同时在一个队列里排队。如果是CFS的调度类，也就是公平调度，就会将进程放到cfs_rq，然后调用date_curr更新运行的统计量，将进程的sched_entity加入到红黑树（cfs_rq的实现是红黑树）里，设置se->on_rq = 1。
+3. 调用check_preempt_curr，看能否抢占当前进程。如果前面设置了让子进程先运行，则直接返回。如果没有设置，就让父子进程PK一下，看是否要抢占，如果是，则标记父进程为TIF_NEED_RESCHED。抢占的时机为，fork系统调用返回的时候，因为进程抢占可以发生在系统调用返回的时候。
