@@ -1,6 +1,6 @@
 # 1. 进程
 
-进程是程序的运行实例。当一段程序被同时运行多次时，就会创建多个进程。进程在Linux里也叫做task。
+进程是程序的运行实例。当一段程序被同时运行多次时，就会创建多个进程。进程在Linux内核里也叫做task。
 
 ## 1.1 进程描述符
 
@@ -352,3 +352,226 @@ void wake_up_new_task(struct task_struct *p)
 1. 将state设置为TASK_RUNNING。
 2. activate_task函数会调用enqueue_task，将进程放到运行队列里面，每个CPU有自己的多个运行队列，一个进程只能同时在一个队列里排队。如果是CFS的调度类，也就是公平调度，就会将进程放到cfs_rq，然后调用date_curr更新运行的统计量，将进程的sched_entity加入到红黑树（cfs_rq的实现是红黑树）里，设置se->on_rq = 1。
 3. 调用check_preempt_curr，看能否抢占当前进程。如果前面设置了让子进程先运行，则直接返回。如果没有设置，就让父子进程PK一下，看是否要抢占，如果是，则标记父进程为TIF_NEED_RESCHED。抢占的时机为，fork系统调用返回的时候，因为进程抢占可以发生在系统调用返回的时候。
+
+##1.3 创建线程
+
+线程和进程的创建过程有很多相似的地方，因此接着讲线程的创建。
+
+![](./pic/1-创建线程.jpeg)
+
+如上图所示，左边是创建进程，右边是创建线程，它们最大的区别有2点，首先是线程的创建有一部分工作是在用户态完成的，也就是`pthread_create`函数，这个函数来自Glibc，不是系统调用。第二点不同是在下面复制数据的时候，子线程是直接引用了parent的数据，也就是说，这部分数据被所有的子线程共享。
+
+### 1.3.1 用户态工作pthread_create
+
+首先说说pthread是什么，我们知道在无论是线程还是进程内核里都用task_struct来表示，而线程在用户态是用pthread这个结构来维护。因此首先就是创建这么一个pthread结构，怎么创建呢？
+
+```c
+struct pthread *pd = NULL;
+int err = ALLOCATE_STACK (iattr, &pd);
+```
+
+看起来有点奇怪，创建一个pthread是调用ALLOCATE_STACK去创建一个stack，但是经过这么一个调用后确实创建了一个新的pthread，接下来来看具体里面做了什么。ALLOCATE_STACK的定义如下
+
+```c
+1   # define ALLOCATE_STACK(attr, pd) allocate_stack (attr, pd, &stackaddr)
+2   
+3   static int
+4   allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
+5                   ALLOCATE_STACK_PARMS)
+6   {
+7     struct pthread *pd;
+8     size_t size;
+9     size_t pagesize_m1 = __getpagesize () - 1;
+10  ......
+11    size = attr->stacksize;
+12  ......
+13    /* Allocate some anonymous memory.  If possible use the cache.  */
+14    size_t guardsize;
+15    void *mem;
+16    const int prot = (PROT_READ | PROT_WRITE
+17                     | ((GL(dl_stack_flags) & PF_X) ? PROT_EXEC : 0));
+18    /* Adjust the stack size for alignment.  */
+19    size &= ~__static_tls_align_m1;
+20    /* Make sure the size of the stack is enough for the guard and
+21    eventually the thread descriptor.  */
+22    guardsize = (attr->guardsize + pagesize_m1) & ~pagesize_m1;
+23    size += guardsize;
+24    pd = get_cached_stack (&size, &mem);
+25    if (pd == NULL)
+26    {
+27      /* If a guard page is required, avoid committing memory by first
+28      allocate with PROT_NONE and then reserve with required permission
+29      excluding the guard page.  */
+30  	mem = __mmap (NULL, size, (guardsize == 0) ? prot : PROT_NONE,
+31  			MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+32      /* Place the thread descriptor at the end of the stack.  */
+33  #if TLS_TCB_AT_TP
+34      pd = (struct pthread *) ((char *) mem + size) - 1;
+35  #elif TLS_DTV_AT_TP
+36      pd = (struct pthread *) ((((uintptr_t) mem + size - __static_tls_size) & ~__static_tls_align_m1) - TLS_PRE_TCB_SIZE);
+37  #endif
+38      /* Now mprotect the required region excluding the guard area. */
+39      char *guard = guard_position (mem, size, guardsize, pd, pagesize_m1);
+40      setup_stack_prot (mem, size, guard, guardsize, prot);
+41      pd->stackblock = mem;
+42      pd->stackblock_size = size;
+43      pd->guardsize = guardsize;
+44      pd->specific[0] = pd->specific_1stblock;
+45      /* And add to the list of stacks in use.  */
+46      stack_list_add (&pd->list, &stack_used);
+47    }
+48    
+49    *pdp = pd;
+50    void *stacktop;
+51  # if TLS_TCB_AT_TP
+52    /* The stack begins before the TCB and the static TLS block.  */
+53    stacktop = ((char *) (pd + 1) - __static_tls_size);
+54  # elif TLS_DTV_AT_TP
+55    stacktop = (char *) (pd - 1);
+56  # endif
+57    *stack = stacktop;
+58  ...... 
+59  }
+```
+
+`allocate_stack`具体做了一下工作：
+
+1. 11行，如果你设置了stack的size，就把这个值取出来，之后要用来设置stack的大小。
+2. 22行，为了防止栈的越界访问，在栈的尾部会有一块儿空间guardsize，一旦访问这里就错误了。
+3. 24行，接下来就是真正创建pthread的地方了，会调用`get_cached_stack`去缓存中获取一个栈，因为所有线程的栈都是在进程的堆里面创建的，创建删除十分频繁，所以需要把这些分配的内存缓存起来。
+4. 如果从缓存中获取栈失败，则进入26-47行
+   1. 30行，调用`__mmap`分配一块新的栈内存。
+   2. 接下来将栈底这块空间分配给pthread，也就是说pthread是放在栈里面的。至此，我们得到了pthread。
+   3. 39行，计算出guard内存的位置，40行调用`setup_stack_prot`来设置这一块内存是受保护的。
+   4. 41-44行，填充pthread这个结构里的stackblock（刚才分配的栈内存块），stackblock_size（栈内存大小），guardsize（内存保护区），specific（存放的是线程的全局变量）。
+   5. 将新建的这个线程栈放入到stack_used链表中，之后用完了会缓存到stack_cache中。
+5. 49行，将新建的pthread赋值给目标。
+
+到这里，pthread就创建好了，现在我们就能理解了为什么用allocate_stack来创建pthread，因为要先创建线程栈，再指定一块栈内存用来创建pthread。现在我们知道了，在用户态中，创建线程需要做的工作就是创建了新线程所需的栈。接下来要把这个栈交给内核态去完成后续的创建工作。
+
+在交给create_thread去进行内核态工作之前，我们还需要为新建的pthread设置start_routine，也就是线程需要执行的函数，以及arg，传给这个函数的参数，以及调度策略。
+
+```c
+pd->start_routine = start_routine;
+pd->arg = arg;
+pd->schedpolicy = self->schedpolicy;
+pd->schedparam = self->schedparam;
+/* Pass the descriptor to the caller.  */
+*newthread = (pthread_t) pd;
+atomic_increment (&__nptl_nthreads);
+retval = create_thread (pd, iattr, &stopped_start, STACK_VARIABLES_ARGS, &thread_ran);
+```
+
+###1.3.2 内核态工作create_thread
+
+create_thread是内核态工作的入口，还没有正式进入内核态，因为我们知道要进行系统调用才算进入内核态。其定义如下：
+
+```c
+static int
+create_thread (struct pthread *pd, const struct pthread_attr *attr,
+bool *stopped_start, STACK_VARIABLES_PARMS, bool *thread_ran)
+{
+  const int clone_flags = (CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SYSVSEM | CLONE_SIGHAND | CLONE_THREAD | CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID | 0);
+  ARCH_CLONE (&start_thread, STACK_VARIABLES_ARGS, clone_flags, pd, &pd->tid, tp, &pd->tid)；
+  /* It's started now, so if we fail below, we'll have to cancel it
+and let it clean itself up.  */
+  *thread_ran = true;
+}
+```
+
+clone_flags定义了一些标志，指明了要复制的数据是哪些。需要特别关注。
+
+ARCH_CLONE宏，其实就是调用__clone，定义如下，这里正式进入系统调用了。
+
+```c
+SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
+		 int __user *, parent_tidptr,
+		 int __user *, child_tidptr,
+		 unsigned long, tls)
+{
+	return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+}
+```
+
+看到了熟悉的_do_fork，也就是和进程的复制步骤一样了。
+
+_do_fork前面讲过了，现在重点关心一下创建进程和创建线程在这个地方的区别。
+
+1. 之前我们设置了clone_flags，其影响了以下几方面。
+
+   首先是copy_files，创建进程时，是复制一个files_struct，而这里因为有CLONE_FILES标志，只是将files_struct引用计数加一。
+
+   ```c
+   static int copy_files(unsigned long clone_flags, struct task_struct *tsk)
+   {
+   	struct files_struct *oldf, *newf;
+   	oldf = current->files;
+   	if (clone_flags & CLONE_FILES) {
+   		atomic_inc(&oldf->count);
+   		goto out;
+   	}
+   	newf = dup_fd(oldf, &error);
+   	tsk->files = newf;
+   out:
+   	return error;
+   }
+   ```
+
+   对于copy_fs，原来是复制一个fs_struct，因为CLONE_FS标志的存在，将原来的fs_struct用户数加一。
+
+   ```c
+   static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
+   {
+   	struct fs_struct *fs = current->fs;
+   	if (clone_flags & CLONE_FS) {
+   		fs->users++;
+   		return 0;
+   	}
+   	tsk->fs = copy_fs_struct(fs);
+   	return 0;
+   }
+   ```
+
+   同理，对于copy_sighand，copy_signal，copy_mm都从以前的复制一个新的，到现在的共享一个老的。
+
+2. 对于亲缘关系的影响，因为在clone_flags里设置了CLONE_THREAD，就表明现在是在创建一个线程。
+
+   - 如果是创建新进程，设置新进程的group_leader是他自己，tgid是它自己的pid。如果是创建新线程，group_leader是当前进程的group_leader，tgid是当前进程的tgid，也就是说，这个新线程是当前进程的线程组的一员。
+   - 如果是创建新进程，那么新进程的real_parent就是当前进程，进程树上又会多一层。如果是创建新线程，线程的real_parent是当前进程real_parent，就是一辈的。
+
+3. 对信号处理的不同在于，对于新建进程，会在copy_signal的时候，初始化signal_struct里面的shard_pending，也就是说不同的进程有自己的信号处理。而新建线程的时候，共享了父进程的signal_struct，也就是线程组中的所有线程共享一个share_pending，这是一个信号列表。因此发给父进程的信号所有的子线程都能收到。kill掉一个进程，也就会Kill掉所有子线程。
+
+至此，clone在内核的调用完毕，要退出系统调用，返回用户态。
+
+### 1.3.3 用户态执行线程
+
+回到用户态后，根据__clone的第一个参数，不是马上执行我们指定的那个函数，而是执行一个通用的start\_thread，这是所有线程再用户态的统一入口。
+
+```c
+1   #define START_THREAD_DEFN \
+2     static int __attribute__ ((noreturn)) start_thread (void *arg)
+3   
+4   
+5   START_THREAD_DEFN
+6   {
+7       struct pthread *pd = START_THREAD_SELF;
+8       /* Run the code the user provided.  */
+9       THREAD_SETMEM (pd, result, pd->start_routine (pd->arg));
+10      /* Call destructors for the thread_local TLS variables.  */
+11      /* Run the destructor for the thread-local data.  */
+12      __nptl_deallocate_tsd ();
+13      if (__glibc_unlikely (atomic_decrement_and_test (&__nptl_nthreads)))
+14          /* This was the last thread.  */
+15          exit (0);
+16      __free_tcb (pd);
+17      __exit_thread ();
+18  }
+```
+
+- 在第9行，真正执行调用用户提供的函数
+- 12-17行是在用户的函数执行完毕之后，释放这个线程相关的数据。
+  - 13行，线程数目减一，如果是进程中最后一个线程了，就退出进程。
+  - 16行，__free\_tcb用于释放pthread。\_\_free\_tcb会调用\_\_deallocate_stack来释放整个栈，把这个栈从stack\_used中拿下来，放到stack\_cache中。
+
+总结一下，创建进程的系统调用是fork，在copy_process里面讲五大结构都复制一遍，从此父子进程各用个的。而创建线程的话，先创建线程的栈，然后调用系统调用clone，在copy_process的时候，仅仅将五大结构的引用计数加一，也就是共享进程的数据结构。
+
