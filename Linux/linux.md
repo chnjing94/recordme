@@ -658,6 +658,10 @@ unsigned int policy;
   - SCHED_FIFO：对于相同的优先级，先来先服务，高优先级可以抢占低优先级。
   - SCHED_RR：对于相同优先级，采用时间片轮流调度法，用完时间片的进程就放到队列后面。高优先级可以抢占低优先级。
   - SCHED_DEADLINE：按照任务的deadline进行调度，总是先选择离deadline最近的那个任务执行。
+- 普通调度策略：
+  - SCHED_NORMAL：普通进程。
+  - SCHED_BATCH：后台线程，不需要和前端交互，在后台默默执行，可以降低其优先级。
+  - SCHED_IDLE：只有在空闲状态下，才执行的线程。
 
 配合调度策略的，还有优先级，也在task_struct中
 
@@ -667,3 +671,368 @@ unsigned int rt_priority;
 ```
 
 优先级是一个数值，对于实时进程，优先级范围是0~99；对于普通进程，优先级范围是100~139。数值越小优先级越高。
+
+上面的优先级，调度策略只是定义了该怎么做，具体实现这些调度策略的，是调度类sched_class，有以下几种实现：
+
+- stop_sched_class，优先级最高的任务会使用这种策略，可以中断别人，自己不会被打断。
+- dl_sched_class，对应上面的deadline调度策略。
+- rt_sched_class对应RR算法或者FIFO算法的调度策略，具体有task_struct->policy指定。
+- fair_sched_class就是普通进程的调度策略。
+- idle_sched_class就是空闲进程的调度策略。
+
+因为我们平时用到的绝大多数都是普通进程，所以重点分析fair_sched_class，对于普通进程来说，公平是最重要的。
+
+#### 1.5.1.2 完全公平调度算法
+
+完全公平调度算法，简称CFS，在进程运行的时候，CPU会提供一个时钟，过一段时间就会触发一个时钟中断。每个进程都有一个变量vruntime用来记录进程运行时长，每当一个时钟中断到来的时候，就将vruntime增加，但是因为每个进程的优先级不同，增加vruntime的计算方式也不同。
+
+```
+vruntime += 实际运行时间 * NICE_0_LOAD/权重
+```
+
+我们知道优先级高的进程NICE_0_LOAD越低，权重越大。导致vruntime不会增加实际运行那么多时间。而对于优先级低的进程，vruntime增加的值会比实际运行的值要大。
+
+现在，每个进程都有自己的vruntime了，CFS要做的就是保证所有进程的vruntime都大致相等，谁运行久了就停下来，谁运行少了就多跑一会儿。
+
+#### 1.5.1.3 调度队列与调度实体
+
+调度队列是存放进程的地方，也根据不同的调度策略将进程排序。对CFS来说，需要一个队列使得每次取出的进程的vruntime都是最小的，插入新的进程之后还要快速地调整排序。出于对查询速度和更新速度的考虑，选择红黑树作为这个队列的实现。
+
+现在我们有了这个队列，那么还需要一个实体来代表一个进程进入到队列中，这样的实体叫做调度实体sched_entity。调度实体有sched_dl_entity也就是Deadline调度实体，sched_rt_entity实时调度实体，以及完全公平算法调度实体sched_entity。
+
+普通进程的sched_entity定义如下：
+
+```c
+struct sched_entity {
+	struct load_weight		load;
+	struct rb_node			run_node;
+	struct list_head		group_node;
+	unsigned int			on_rq;
+	u64				exec_start;
+	u64				sum_exec_runtime;
+	u64				vruntime;
+	u64				prev_sum_exec_runtime;
+	u64				nr_migrations;
+	struct sched_statistics		statistics;
+......
+};
+```
+
+记录了vruntime以及权重，还有对运行时间的统计。
+
+然后把sched_entity挂到红黑树上，就像这样
+
+![](./pic/1-红黑树.jpeg)
+
+每次都取最左叶子节点作为下一个获得CPU的任务。
+
+再回到调度队列上来，每个CPU都有自己的struct rq结构，用来描述在这个CPU上运行的所有进程，定义如下：
+
+```c
+struct rq {
+	/* runqueue lock: */
+	raw_spinlock_t lock;
+	unsigned int nr_running;
+	unsigned long cpu_load[CPU_LOAD_IDX_MAX];
+......
+	struct load_weight load;
+	unsigned long nr_load_updates;
+	u64 nr_switches;
+
+
+	struct cfs_rq cfs;
+	struct rt_rq rt;
+	struct dl_rq dl;
+......
+	struct task_struct *curr, *idle, *stop;
+......
+};
+```
+
+里面有几个任务队列，这里列出了cfs_rq，rt_rq，dl_rq。
+
+cfs_rq的定义如下：
+
+```c
+/* CFS-related fields in a runqueue */
+struct cfs_rq {
+	struct load_weight load;
+	unsigned int nr_running, h_nr_running;
+
+
+	u64 exec_clock;
+	u64 min_vruntime;
+#ifndef CONFIG_64BIT
+	u64 min_vruntime_copy;
+#endif
+	struct rb_root tasks_timeline;
+	struct rb_node *rb_leftmost;
+
+
+	struct sched_entity *curr, *next, *last, *skip;
+......
+};
+```
+
+rb_root指向的是红黑树的根节点，rb_leftmost指向的是最左面的节点。
+
+我们来看看所有数据结构的关系：
+
+![](./pic/1-任务队列.jpeg)
+
+#### 1.5.1.4 调度类工作流程
+
+首先来看调度类的定义：
+
+```c
+struct sched_class {
+	const struct sched_class *next;
+
+
+	void (*enqueue_task) (struct rq *rq, struct task_struct *p, int flags);
+	void (*dequeue_task) (struct rq *rq, struct task_struct *p, int flags);
+	void (*yield_task) (struct rq *rq);
+	bool (*yield_to_task) (struct rq *rq, struct task_struct *p, bool preempt);
+
+
+	void (*check_preempt_curr) (struct rq *rq, struct task_struct *p, int flags);
+
+
+	struct task_struct * (*pick_next_task) (struct rq *rq,
+						struct task_struct *prev,
+						struct rq_flags *rf);
+	void (*put_prev_task) (struct rq *rq, struct task_struct *p);
+
+
+	void (*set_curr_task) (struct rq *rq);
+	void (*task_tick) (struct rq *rq, struct task_struct *p, int queued);
+	void (*task_fork) (struct task_struct *p);
+	void (*task_dead) (struct task_struct *p);
+
+
+	void (*switched_from) (struct rq *this_rq, struct task_struct *task);
+	void (*switched_to) (struct rq *this_rq, struct task_struct *task);
+	void (*prio_changed) (struct rq *this_rq, struct task_struct *task, int oldprio);
+	unsigned int (*get_rr_interval) (struct rq *rq,
+					 struct task_struct *task);
+	void (*update_curr) (struct rq *rq)
+```
+
+定义了很多方法，最主要的是将进程入队，pick_next_task，取出下一个将被执行的进程。
+
+我们知道调度类有以下几种
+
+```c
+extern const struct sched_class stop_sched_class;
+extern const struct sched_class dl_sched_class;
+extern const struct sched_class rt_sched_class;
+extern const struct sched_class fair_sched_class;
+extern const struct sched_class idle_sched_class;
+```
+
+他们是被放到一个链表上以此调用的，当我们需要选一个进程到CPU上去执行时，执行以下函数：
+
+```c
+/*
+ * Pick up the highest-prio task:
+ */
+static inline struct task_struct *
+pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+{
+	const struct sched_class *class;
+	struct task_struct *p;
+......
+	for_each_class(class) {
+		p = class->pick_next_task(rq, prev, rf);
+		if (p) {
+			if (unlikely(p == RETRY_TASK))
+				goto again;
+			return p;
+		}
+	}
+}
+```
+
+这里的for_each_class循环会依次调用stop_sched_class->dl_sched_class->...->idle_sched_class，在这个过程中某一个1调度类找到了需要执行的进程，就开始执行这个进程，然后下次又从stop_sched_class开始找，这样保证了优先级高的队列里的进程总是会被优先执行。
+
+下图描述了进程调度的数据结构，以及流程
+
+![](./pic/1-调度流程.jpeg)
+
+### 1.5.2 主动调度
+
+进程切换分两种，主动切换和被动切换。主动切换发生在需要等待某些事情完成，例如IO，在此期间是不需要用到CPU的，就应该主动让出使用权。被动切换发生在，高优先级进程抢占，或者运行时间过长，需要切换到其他进程了。
+
+来看一个例子，从Tap网络设备等待一个读取，
+
+```c
+static ssize_t tap_do_read(struct tap_queue *q,
+			   struct iov_iter *to,
+			   int noblock, struct sk_buff *skb)
+{
+......
+	while (1) {
+		if (!noblock)
+			prepare_to_wait(sk_sleep(&q->sk), &wait,
+					TASK_INTERRUPTIBLE);
+......
+		/* Nothing to read, let's sleep */
+		schedule();
+	}
+......
+}
+```
+
+当数据没有来的时候，它需要等待，所以应该把CPU让给其他进程。调用schedule()函数开始进程的切换。
+
+schedule()函数定义如下：
+
+```c
+asmlinkage __visible void __sched schedule(void)
+{
+	struct task_struct *tsk = current;
+
+
+	sched_submit_work(tsk);
+	do {
+		preempt_disable();
+		__schedule(false);
+		sched_preempt_enable_no_resched();
+	} while (need_resched());
+}
+```
+
+其中主要逻辑是在__schedule中完成的，
+
+```c
+static void __sched notrace __schedule(bool preempt)
+{
+	struct task_struct *prev, *next;
+	unsigned long *switch_count;
+	struct rq_flags rf;
+	struct rq *rq;
+	int cpu;
+
+
+	cpu = smp_processor_id();
+	rq = cpu_rq(cpu);
+	prev = rq->curr;
+......
+```
+
+首先找到当前CPU，从里面取出任务队列，再把当前运行的进程存放到prev变量里，因为它马上就要变成前任了。接下来
+
+```c
+next = pick_next_task(rq, prev, &rf);
+clear_tsk_need_resched(prev);
+clear_preempt_need_resched();
+```
+
+这里会依次调用调度类，去获取接下来要执行的进程。
+
+####1.5.2.1 进程上下文切换
+
+现在我们已经确定要切换的那个进程了，接下来就是切换上下文。主要做两件事情，一是切换进程空间；二是切换寄存器和CPU上下文。
+
+上下文切换的函数context_switch的实现如下：
+
+```c
+/*
+ * context_switch - switch to the new MM and the new thread's register state.
+ */
+static __always_inline struct rq *
+context_switch(struct rq *rq, struct task_struct *prev,
+	       struct task_struct *next, struct rq_flags *rf)
+{
+	struct mm_struct *mm, *oldmm;
+......
+	mm = next->mm;
+	oldmm = prev->active_mm;
+......
+	switch_mm_irqs_off(oldmm, mm, next);
+......
+	/* Here we just switch the register state and the stack. */
+	switch_to(prev, next, prev);
+	barrier();
+	return finish_task_switch(prev);
+}
+```
+
+首先就是内存空间的切换。
+
+接下来就是switch_to()函数，它要做的事情就是寄存器和栈的切换。
+
+对于栈的切换，是调用了__switch_to_asm，对于32位操作系统，切换的是栈顶指针esp，对于64位操作系统来说，是切换栈顶指针rsp。以下是64位操作系统的定义，
+
+```c
+/*
+ * %rdi: prev task
+ * %rsi: next task
+ */
+ENTRY(__switch_to_asm)
+......
+	/* switch stack */
+	movq	%rsp, TASK_threadsp(%rdi)
+	movq	TASK_threadsp(%rsi), %rsp
+......
+	jmp	__switch_to
+END(__switch_to_asm)
+```
+
+最后jmp 到了_switch_to，这个函数用来实现寄存器的切换，
+
+```c
+__visible __notrace_funcgraph struct task_struct *
+__switch_to(struct task_struct *prev_p, struct task_struct *next_p)
+{
+......
+	int cpu = smp_processor_id();
+	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
+......
+	load_TLS(next, cpu);
+......
+	this_cpu_write(current_task, next_p);
+
+
+	/* Reload esp0 and ss1.  This changes current_thread_info(). */
+	load_sp0(tss, next);
+......
+	return prev_p;
+}
+```
+
+每个CPU的TR寄存器都指向了一个TSS结构，里面存储的是CPU所有寄存器的值。
+
+在进程中的task_struct里，有一个成员变量thread，里面保存了切换进程时需要修改的寄存器。
+
+```c
+/* CPU-specific state of this task: */
+	struct thread_struct		thread;
+```
+
+因此切换进程过程中的寄存器切换，就是将进程的thread变量里的值，写入到CPU的TR指向的tss_struct，就相当于完成了切换。例如上面的`load_sp0(tss, next);`就是将新进程的sp0值，加载到tss_struct里。
+
+#### 1.5.2.2 指令指针的保存与恢复
+
+用户栈在内存切换的时候就切换了，内核栈在__switch_to里面切换了，也就是指向了新进程task_struct的stack指针，也就是当前的内核栈。而用户栈的栈顶指针，是要从内核栈顶的pt_regs结构里面拿，也就是当从内核态返回时，栈顶指针会指向之前保存的栈顶指针，指令指针也保存在这个pt_regs里面。这样新进程就可以恢复执行了。
+
+switch_to()函数定义如下：
+
+```c
+#define switch_to(prev, next, last)					\
+do {									\
+	prepare_switch_to(prev, next);					\
+									\
+	((last) = __switch_to_asm((prev), (next)));			\
+} while (0)
+```
+
+prev代表的是上一个进程，next代表的是即将要执行的进程，而这个last，会告诉你，当前线程是由谁切换回来的。
+
+比如，当前是A，要切换到B，那么A进程在执行完__switch_to_asm后，还没等到函数返回，CPU就跳去执行B进程了，确切的说，也是B进程的相同的这一行代码，对于B进程来说，返回值last是A，B就知道了，我是由A切换过来的。之后，B切换到了C，C由切换回A，这个时候A进程继续从这一行开始执行，它得到了一个返回值last C，告诉A，是由C切换回来的。
+
+
+
+进程主动切换流程总结：
+
+![](/Users/chenjing/Desktop/LearningNotes/Linux/pic/1-主动切换.png)
