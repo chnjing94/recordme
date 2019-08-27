@@ -1035,4 +1035,115 @@ prev代表的是上一个进程，next代表的是即将要执行的进程，而
 
 进程主动切换流程总结：
 
-![](/Users/chenjing/Desktop/LearningNotes/Linux/pic/1-主动切换.png)
+![](./pic/1-主动切换.png)
+
+### 1.5.3 抢占式调度
+
+除了进程主动让出CPU，还会有被动让出CPU的情况，我们称这种情况为抢占式调度。
+
+#### 1.5.3.1 抢占场景
+
+最常见的一个场景就是进程运行的时间太长了，是时候切换别的进程了。操作系统怎么衡量一个进程是否允许太久了呢？计算机里有一个时钟，每隔一段时间就会触发时钟中断，告诉操作系统，又过了一个时钟周期，操作系统就会调用scheduler_tick()来处理这个时钟中断，判断是否需要抢占当前进程。
+
+scheduler_tick()定义如下：
+
+```c
+void scheduler_tick(void)
+{
+	int cpu = smp_processor_id();
+	struct rq *rq = cpu_rq(cpu);
+	struct task_struct *curr = rq->curr;
+......
+	curr->sched_class->task_tick(rq, curr, 0);
+	cpu_load_update_active(rq);
+	calc_global_load_tick(rq);
+......
+}
+```
+
+先拿到当前CPU任务队列里正在运行的进程，然后调用它的调度类sched_class的task_tick()方法。
+
+如果我们运行的是普通进程，调度类为fair_sched_class，调用的处理时钟的函数为task_tick_fair，定义如下
+
+```c
+static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
+{
+	struct cfs_rq *cfs_rq;
+	struct sched_entity *se = &curr->se;
+
+
+	for_each_sched_entity(se) {
+		cfs_rq = cfs_rq_of(se);
+		entity_tick(cfs_rq, se, queued);
+	}
+......
+}
+```
+
+根据当前进程的task_struct，找到对应的sched_entity和cfs_rq队列，调用entity_tick。
+
+```c
+static void
+entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
+{
+	update_curr(cfs_rq);
+	update_load_avg(curr, UPDATE_TG);
+	update_cfs_shares(curr);
+.....
+	if (cfs_rq->nr_running > 1)
+		check_preempt_tick(cfs_rq, curr);
+}
+```
+
+终于来到了最重要的地方，这里的update_curr函数，就是更新当前进程的vruntime，然后调用check_preempt_tick来检查运行时间是不是太长了，是否需要被抢占了。
+
+check_preempt_tick先计算出一个ideal_runtime，这个值是一个进程应该运行的时间。然后计算出本次获得CPU后实际的运行时间，如果大于了ideal_runtime，就应该被抢占了。
+
+还有一个判断条件就是，当前进程的vruntime比红黑树上最小的vruntime大于了ideal_runtime，也该被抢占。
+
+判定当前进程应该被抢占之后，并不是马上踢走这个进程，因为进程的切换必须让这个进程自己执行__schedule。那你可能会想，进程要是不愿意执行\_\_schedule()怎么办呢？就可以一直占着CPU？我们继续往下看。判定为应该被抢占之后，会给进程打上一个标签TIF_NEED_RESCHED。
+
+```c
+static inline void set_tsk_need_resched(struct task_struct *tsk)
+{
+	set_tsk_thread_flag(tsk,TIF_NEED_RESCHED);
+}
+```
+
+另外一个可能抢占的场景就是进程被唤醒的时候，比如，当一个进程在等待IO的时候，会让出CPU，IO完成后会唤醒这个进程，这个时候会判断一下该进程的优先级是否高于正在运行的进程，如果是，就将当前进程标记为应该抢占。
+
+#### 1.5.3.2 抢占的时机
+
+前面我们已经标记了抢占标志，那么什么时刻可以让当前进程取执行以下__schedule()呢？这个时机分用户态和内核态。
+
+**用户态的抢占时机**
+
+对用户态来说，从系统调用返回的那一刻是一个合适的抢占时机。64位操作系统的系统调用路径如下：do_syscall_64->syscall_return_slowpath->prepare_exit_to_usermode->exit_tousermode_loop。exit_tousermode_loop的定义如下：
+
+```c
+static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
+{
+	while (true) {
+		/* We have work to do. */
+		local_irq_enable();
+
+
+		if (cached_flags & _TIF_NEED_RESCHED)
+			schedule();
+......
+	}
+}
+```
+
+这里会检查一下抢占标志位，如果被标记过，说明需要被抢占，因此调用schedule()完成进程切换。
+
+**内核态的抢占时机**
+
+内核态的抢占时机一般发生在preempt_enable()中。在内核态的执行过程中，有的操作时不能够被中断的，所以在这些操作前，都要调用preempt_disable()关闭抢占，执行完成之后，就会调用preempt_enable()开启抢占，这是一个进程切换的时机。
+
+有些内核线程也会被中断，中断返回的时候，也是一个可抢占时机。
+
+**进程的调度总结**
+
+![](./pic/1-进程调度总结.png)
+
