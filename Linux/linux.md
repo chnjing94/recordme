@@ -1237,3 +1237,54 @@ static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
 struct mm_struct		*mm;
 ```
 
+###2.2.1 用户态和内核态划分
+
+在这个mm_struct里，有一个成员变量
+
+```c
+unsigned long task_size;		/* size of task vm space */
+```
+
+task_size用来确定用户态地址空间和内核态地址空间的分界线。在32位系统中，task_size=0xC0000000，也就是0x00000000-0xC0000000为用户态地址空间，0xC0000000-0xffffffff为内核态地址空间。
+
+对于64位操作系统，虚拟地址只使用了其中48位，其中用户地址以0x0开头，总计128T，内核态地址以0xF开头，总计128T。
+
+![](./pic/2-用户态内核态地址空间.jpg)
+
+
+
+### 2.2.2 用户态布局
+
+用户态虚拟空间有以下几类数据，如代码，全局变量，堆，栈，内存映射区等。这些区域的描述信息，保存在mm_struct以下字段中
+
+```c
+unsigned long mmap_base;	/* base of mmap area */
+unsigned long total_vm;		/* Total pages mapped */
+unsigned long locked_vm;	/* Pages that have PG_mlocked set */
+unsigned long pinned_vm;	/* Refcount permanently increased */
+unsigned long data_vm;		/* VM_WRITE & ~VM_SHARED & ~VM_STACK */
+unsigned long exec_vm;		/* VM_EXEC & ~VM_WRITE & ~VM_STACK */
+unsigned long stack_vm;		/* VM_STACK */
+unsigned long start_code, end_code, start_data, end_data;
+unsigned long start_brk, brk, start_stack;
+unsigned long arg_start, arg_end, env_start, env_end;
+```
+
+- total_vm，总共映射的页数数目，这么大的虚拟内存地址不可能都有物理页与其一一对应。物理内存页在吃紧的时候，会换到硬盘上，但重要的页不能被移出，使用locked_vm来锁定不能移出的页，pinned_vm表示的页不能换出也不能移动。
+- data_vm是存放数据页的数目，exec_vm是存放可执行文件的页的数目，stack_vm是栈所占页的数目。
+- start_code和end_code是可执行代码的开始和结束位置，start_data和end_data表示已经初始化数据的开始位置和结束位置。
+- start_brk是堆的起始位置，brk是堆当前的结束位置，使用malloc申请到内存后，移动brk的位置。
+- arg_start和arg_end就是参数列表的其实位置，env_start和env_end是环境变量的位置，它们都位于栈最高的地方。
+- mmap_base表示内存映射的起始位置，使用malloc分配一大块内存的时候，就是通过mmap映射一块区域到物理内存。加载so文件，也是映射一块区域到物理内存，再把so文件写入该物理内存。
+
+![](./pic/2-32用户态布局.jpg)
+
+除了位置信息，mm_struct里面还有一个结构vm_area_struct，来描述这些区域的属性。
+
+```c
+struct vm_area_struct *mmap;		/* list of VMAs */
+struct rb_root mm_rb;
+```
+
+*mmap是一个vm_area_struct链表，用于将这些区域串起来。还使用了红黑树来查找修改这些内存区域，rb_root是红黑树根节点。
+
