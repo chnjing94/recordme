@@ -1279,7 +1279,7 @@ unsigned long arg_start, arg_end, env_start, env_end;
 
 ![](./pic/2-32用户态布局.jpg)
 
-除了位置信息，mm_struct里面还有一个结构vm_area_struct，来描述这些区域的属性。
+上面的信息都描述的是位置信息，除了位置信息，mm_struct里面还有一个结构vm_area_struct，来描述这些区域的属性。
 
 ```c
 struct vm_area_struct *mmap;		/* list of VMAs */
@@ -1287,4 +1287,142 @@ struct rb_root mm_rb;
 ```
 
 *mmap是一个vm_area_struct链表，用于将这些区域串起来。还使用了红黑树来查找修改这些内存区域，rb_root是红黑树根节点。
+
+vm_area_struct结构如下：
+
+```c
+struct vm_area_struct {
+	/* The first cache line has the info for VMA tree walking. */
+	unsigned long vm_start;		/* Our start address within vm_mm. */
+	unsigned long vm_end;		/* The first byte after our end address within vm_mm. */
+	/* linked list of VM areas per task, sorted by address */
+	struct vm_area_struct *vm_next, *vm_prev;
+	struct rb_node vm_rb;
+	struct mm_struct *vm_mm;	/* The address space we belong to. */
+	struct list_head anon_vma_chain; /* Serialized by mmap_sem &
+					  * page_table_lock */
+	struct anon_vma *anon_vma;	/* Serialized by page_table_lock */
+	/* Function pointers to deal with this struct. */
+	const struct vm_operations_struct *vm_ops;
+	struct file * vm_file;		/* File we map to (can be NULL). */
+	void * vm_private_data;		/* was vm_pte (shared mem) */
+} __randomize_layout;
+```
+
+- vm_start和vm_end指定了该区域在用户空间的起始和结束位置。vm_next和vm_prev用于连接前一个和后一个区域。vm_rb将这个区域放到红黑树上，vm_ops是对这个内存区域可以做的操作。
+- 虚拟内存区域可以映射到物理内存也可以映射到文件，映射到物理内存称为匿名映射，保存在anon_vma里，vm_file表示映射到文件的虚拟内存。
+
+每块区域对应的vm_struct的创建时机，是在load_elf_binary里。也就是当执行exec运行一个二进制程序时，除了要解析ELF格式之外，还要做的另一件重要的事，就是建立内存映射，步骤如下：
+
+```c
+static int load_elf_binary(struct linux_binprm *bprm)
+{
+......
+  setup_new_exec(bprm);
+......
+  retval = setup_arg_pages(bprm, randomize_stack_top(STACK_TOP),
+				 executable_stack);
+......
+  error = elf_map(bprm->file, load_bias + vaddr, elf_ppnt,
+				elf_prot, elf_flags, total_size);
+......
+  retval = set_brk(elf_bss, elf_brk, bss_prot);
+......
+  elf_entry = load_elf_interp(&loc->interp_elf_ex,
+					    interpreter,
+					    &interp_map_addr,
+					    load_bias, interp_elf_phdata);
+......
+  current->mm->end_code = end_code;
+  current->mm->start_code = start_code;
+  current->mm->start_data = start_data;
+  current->mm->end_data = end_data;
+  current->mm->start_stack = bprm->p;
+......
+}
+```
+
+- 调用setup_new_exec，设置内存映射区mmap_base。
+- 调用setup_arg_pages，设置栈的vm_area_struct。
+- elf_map会将ELF文件中的代码映射到内存中来。
+- set_brk设置堆的vm_area_struct。
+- load_elf_interp将依赖的so映射到内存中的内存映射区域。
+
+最终形成以下内存映射图
+
+![](./pic/2-内存映射图.jpeg)
+
+映射完成后，以下情况会修改内存区域
+
+- 第一种情况是函数调用，涉及函数栈的改变，会改变栈顶指针。
+- 第二种情况是通过malloc申请一个堆的空间，底层会执行brk或者mmap来分配。
+
+brk系统调用的入口是sys_brk函数
+
+```c
+SYSCALL_DEFINE1(brk, unsigned long, brk)
+{
+	unsigned long retval;
+	unsigned long newbrk, oldbrk;
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *next;
+......
+	newbrk = PAGE_ALIGN(brk);
+	oldbrk = PAGE_ALIGN(mm->brk);
+	if (oldbrk == newbrk)
+		goto set_brk;
+
+
+	/* Always allow shrinking brk. */
+	if (brk <= mm->brk) {
+		if (!do_munmap(mm, newbrk, oldbrk-newbrk, &uf))
+			goto set_brk;
+		goto out;
+	}
+
+
+	/* Check against existing mmap mappings. */
+	next = find_vma(mm, oldbrk);
+	if (next && newbrk + PAGE_SIZE > vm_start_gap(next))
+		goto out;
+
+
+	/* Ok, looks good - let it rip. */
+	if (do_brk(oldbrk, newbrk-oldbrk, &uf) < 0)
+		goto out;
+
+
+set_brk:
+	mm->brk = brk;
+......
+	return brk;
+out:
+	retval = mm->brk;
+	return retval
+```
+
+sys_brk接收的参数是新的堆顶位置，当前mm->brk是原来堆顶的位置。
+
+如果这次增加的内存不多，不需要另外分配页，就直接跳到set_brk，设置mm->brk为新的brk就可以了。
+
+如果新旧堆顶不在一个页里，且新堆顶小于旧堆顶，说明释放了内存，就调用do_munmap将释放的内存映射去掉。
+
+如果要扩大内存，就调动find_vma，回去查看红黑树上原堆顶所在的vm_area_struct的下一个vm_area_struct，看能否分配一个完整的页，如果不能就直接返回，内存空间被占满了。
+
+如果还有空间，就调用do_brk进一步分配空间。在do_brk中，调用find_vma_links找到将来的vm_area_struct在红黑树中的位置，接下来调用vm_merge，看这个新节点能否和现有树中的节点合并。如果地址是连着的，且权限是相同的，能够合并，不用创建新的vm_area_struct了。如果不能合并，则创建新的vm_area_struct，既加到anon_vma_chain链表中，也加到红黑树中。
+
+### 2.2.3 内核态布局
+
+64位的内存布局图如下
+
+![](./pic/2-64位内核态布局.jpg)
+
+- 从0xffff80000000000开始是内核的部分，有8T的空档区域。
+- 直接映射区有64T，虚拟地址和物理地址之间的映射大部分还是通过建立页表的方式进行映射。
+- vmalloc区域占32T。
+- 从__START_KERNEL_map开始的512M用于存放内核代码段，全局变量，BSS等。
+
+64位系统的内存结构如下：
+
+![](./pic/2-64位内存结构.jpeg)
 
