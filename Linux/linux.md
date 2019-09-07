@@ -1458,5 +1458,154 @@ sys_brk接收的参数是新的堆顶位置，当前mm->brk是原来堆顶的位
 
 ### 2.3.2 节点
 
-节点是NUMA模式下的概念，内存被分为多个节点，每个CPU分配一个节点。
+节点是NUMA模式下的概念，内存被分为多个节点，每个CPU分配一个节点。节点用数据结构pglist_data表示，定义如下：
 
+```c
+typedef struct pglist_data {
+	struct zone node_zones[MAX_NR_ZONES];
+	struct zonelist node_zonelists[MAX_ZONELISTS];
+	int nr_zones;
+	struct page *node_mem_map;
+	unsigned long node_start_pfn;
+	unsigned long node_present_pages; /* total number of physical pages */
+	unsigned long node_spanned_pages; /* total size of physical page range, including holes */
+	int node_id;
+......
+} pg_data_t;
+```
+
+- node_id表示节点id
+- node_mem_map，页数组，用于描述这个节点里所有的页。
+- node_start_pfn是这个节点的起始页号。
+- node_spanned_pages是这个节点包含不连续的物理内存地址的页面数。
+- node_present_pages是真正可用的物理页面数量。
+
+### 2.3.3 区域
+
+每个节点又分成一个个的区域zone，放在node_zones里，zone的类型有：
+
+```c
+enum zone_type {
+#ifdef CONFIG_ZONE_DMA
+	ZONE_DMA,
+#endif
+#ifdef CONFIG_ZONE_DMA32
+	ZONE_DMA32,
+#endif
+	ZONE_NORMAL,
+#ifdef CONFIG_HIGHMEM
+	ZONE_HIGHMEM,
+#endif
+	ZONE_MOVABLE,
+	__MAX_NR_ZONES
+};
+```
+
+- ZONE_DMA表示可以用作DMA（Direct Memory Access）的内存，DMA用于与输出设备的IO。
+- ZONE_NORMAL是直接映射区，也就是从物理内存到虚拟内存的内核区域，通过加上一个常量直接映射。
+- ZONE_HIGHMEM是高端内存，64位系统内存没有这块。
+- ZONE_MOVABLE是可移动区域，移动数据页以减少碎片。
+
+zone的定义如下:
+
+```c
+struct zone {
+......
+	struct pglist_data	*zone_pgdat;
+	struct per_cpu_pageset __percpu *pageset;
+
+
+	unsigned long		zone_start_pfn;
+
+
+	/*
+	 * spanned_pages is the total pages spanned by the zone, including
+	 * holes, which is calculated as:
+	 * 	spanned_pages = zone_end_pfn - zone_start_pfn;
+	 *
+	 * present_pages is physical pages existing within the zone, which
+	 * is calculated as:
+	 *	present_pages = spanned_pages - absent_pages(pages in holes);
+	 *
+	 * managed_pages is present pages managed by the buddy system, which
+	 * is calculated as (reserved_pages includes pages allocated by the
+	 * bootmem allocator):
+	 *	managed_pages = present_pages - reserved_pages;
+	 *
+	 */
+	unsigned long		managed_pages;
+	unsigned long		spanned_pages;
+	unsigned long		present_pages;
+
+
+	const char		*name;
+......
+	/* free areas of different sizes */
+	struct free_area	free_area[MAX_ORDER];
+
+
+	/* zone flags, see below */
+	unsigned long		flags;
+
+
+	/* Primarily protects free_area */
+	spinlock_t		lock;
+......
+} ____cacheline_internodealigned_in_
+```
+
+- present_pages是指这个zone中真实存在的所有page数目。
+- managed_pages是这个zone被伙伴系统管理的所有的page数目。
+- per_cpu_pageset *pageset用来区分冷热页。保存在CPU高速缓存里的页称为热页。
+
+###2.3.4 页
+
+页有两种使用方式
+
+1. 要用就用一整页，用于和虚拟空间建立映射关系的页称为匿名页。用于关联一个文件，再建立与虚拟地址映射关系的，称为内存映射文件。
+2. 仅分配一小块内存。例如只需要分配一个task_struct的内存，只需要一小块内存去存储这个对象。Linux采用了一种叫slab allocator的技术，来实现小块内存的分配。它的基本原理，是将一整页分成很多小块，用复杂的队列来维护这些小块的状态。slub allocator是一种不使用队列的分配器。
+
+### 2.3.5 页的分配-伙伴系统
+
+需要进行页级的内存分配时，采用伙伴系统进行分配。伙伴系统组织页的方式如下：
+
+![](./pic/2-伙伴系统.jpeg)
+
+- free_area是一个数组，长度为11，里面每个元素都是一个页块链表。
+- 在第0个链表上，每个元素都有1个页。第1个链表上，每个元素由2个连续物理页组成，第n个链表上，每个元素有2的n次方个页。n最大为11，因此最后一个链表上，1024个连续的物理页，对应4M大小的组成一个元素。
+- 当向内核请求分配(2^(i-1), 2^i]数目的页块时，按照2^i页块请求处理。例如，需要500个页，就去元素长度为512个页的链表上找
+  - 如果有，就返回这512个页。
+  - 如果没有，就去1024个页的链表上找，找到之后，将1024个页分为512，512。一个分配给需要的请求方，一个存放到512的链表上。这就是伙伴一词的来历，根据需求将一大块内存分成若干小份的内存。
+
+### 2.3.6 小内存分配
+
+对于整页的分配，Linux使用伙伴系统分配。分配小内存时，使用slub allocator。例如要分配一个task_struct，一个mm_struct这样的小内存。
+
+slub allocator从伙伴系统中申请若干个页，组成一大块内存，这块内存叫做kmem_cache，内部又分为若干个小对象，像下图这样:
+
+![](./pic/2-kmem_cache.jpeg)
+
+红色对象是已经使用了的对象，蓝色是未使用。在从kmem_cache中取内存时，有两种路径，一个叫做快速通道，一个叫做普通通道。每次先去快速通道里取，取不到再去普通通道取。下图的kmem_cache_cpu对应的就是快速通道，kmem_cache_node就是普通通道。
+
+![](./pic/2-快速普通通道.jpeg)
+
+要是在普通通道里仍旧没能分配到内存，说明原来分配的页里面都放满了，就会再去向伙伴系统申请内存页。
+
+### 2.3.7 页面换出
+
+以下两种情况会导致页面换出：
+
+1. 申请内存的时候，发现内存满了，就会试图回收以下，将某些页换到硬盘上。
+2. 内核线程kswapd会一直循环地监视内存使用情况，如果内存紧张了，就回去检查一下内存，看是否需要换出一些页。
+
+换页的规则是使用LRU列表，将所有页面放在LRU列表里，根据活跃程度来决定换出谁。
+
+内存页分两类，一是匿名页，二是内存映射。每一类都有两个列表：active和inactive，代表着活跃页和非活跃页，如果要换出内存就从不活跃列表里找出最不活跃的。
+
+将匿名页换出时，要为其分配swap，将内存页写入文件系统。对于内存映射关联了文件的，要将在内存中对于文件的修改写回到文件中。
+
+**总结**
+
+整个物理内存管理如下图所示：
+
+![](./pic/2-物理内存管理总结.jpeg)
