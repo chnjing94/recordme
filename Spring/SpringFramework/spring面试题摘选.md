@@ -12,7 +12,7 @@ spring-beans：Spring Bean相关，如依赖注入，依赖查找
 
 spring-aop：如动态代理，AOP字节码提升
 
-spring-context：事件驱动，注解驱动，模块驱动等
+spring-context：事件驱动，i18N，注解驱动，模块驱动等
 
 spring-expression：Spring表达式语言模块
 
@@ -21,6 +21,14 @@ spring-expression：Spring表达式语言模块
 // **FIX**
 
 优势：
+
+- **DI**
+- **面向切面编程(AOP)**
+- **集成主流框架**
+- **模块化**
+- **便捷的测试**
+- **事务管理**
+- **Web 框架**
 
 不足：开发人员不理解底层原理，出了问题不易调试。
 
@@ -33,6 +41,29 @@ IoC是反转控制，主要实现有依赖注入和依赖查找。
 ### 什么是Spring IoC容器
 
 是spring对于IoC的具体实现，也是依赖注入的实现方式。
+
+### Spring 中有多少种 IoC 容器？
+
+Spring 提供了两种IoC 容器，分别是 BeanFactory、ApplicationContext 。
+
+- **BeanFactory**
+
+  BeanFactory 在 `spring-beans` 项目提供。
+
+- **ApplicationContext**
+
+  ApplicationContext 在 `spring-context` 项目提供。
+
+  ApplicationContext 接口扩展了 BeanFactory 接口，它在 BeanFactory 基础上提供了一些额外的功能。内置如下功能：
+
+  - MessageSource ：管理 message ，实现国际化等功能。
+  - ApplicationEventPublisher ：事件发布。
+  - ResourcePatternResolver ：多资源加载。
+  - EnvironmentCapable ：系统 Environment（profile + Properties）相关。
+  - Lifecycle ：管理生命周期。
+  - Closable ：关闭，释放资源
+  - InitializingBean：自定义初始化。
+  - BeanNameAware：设置 beanName 的 Aware 接口。
 
 ### 依赖查找和依赖注入的区别？
 
@@ -85,7 +116,7 @@ ObjectFactory和BeanFactory均提供依赖查找的能力。ObjectFactory仅关�
 
 依赖查找使用getBean的方式获取依赖，来源包括BeanDefinition以及单例对象，依赖注入使用ResolverDependency来获取依赖，来源包括BeanDefinition、单例对象、Resolvable Dependency（BeanFactory, ResourceLoader, ApplicationEventPublisher, ApplicationContext）以及@Value所标注的外部化配置。
 
-### 有多少种依赖注入的方式
+### 有多少种依赖注入的方式?
 
 - 构造器注入，用于少依赖，强制依赖场景
 - Setter注入，用于多依赖，非强制依赖场景
@@ -100,4 +131,60 @@ ObjectFactory和BeanFactory均提供依赖查找的能力。ObjectFactory仅关�
 ### 单例对象能在IoC容器启动后注册吗？
 
 可以的，BeanDefinition会被BeanFactory#freezeConfiguration()方法影响，从而冻结注册，单例对象则没有这个限制。 
+
+### 请介绍下常用的 BeanFactory 容器和ApplicationContext 容器？
+
+BeanFactory 最常用的是 XmlBeanFactory 。它可以根据 XML 文件中定义的内容，创建相应的 Bean。
+
+以下是三种较常见的 ApplicationContext 实现方式：
+
+- 1、ClassPathXmlApplicationContext ：从 ClassPath 的 XML 配置文件中读取上下文，并生成上下文定义。应用程序上下文从程序环境变量中取得。示例代码如下：
+
+  ```
+  ApplicationContext context = new ClassPathXmlApplicationContext(“bean.xml”);
+  ```
+
+- 2、FileSystemXmlApplicationContext ：由文件系统中的XML配置文件读取上下文。示例代码如下：
+
+  ```
+  ApplicationContext context = new FileSystemXmlApplicationContext(“bean.xml”);
+  ```
+
+- 3、XmlWebApplicationContext ：由 Web 应用的XML文件读取上下文。例如我们在 Spring MVC 使用的情况。
+
+### 列举一些 IoC 的一些好处？
+
+- 它将最小化应用程序中的代码量。
+- 它以最小的影响和最少的侵入机制促进松耦合。
+- 它支持即时的实例化和延迟加载 Bean 对象。
+
+### 简述 Spring IoC 的实现机制？
+
+1. 低级容器 加载配置文件，并解析成 BeanDefinition 到低级容器中。
+2. 加载成功后，高级容器启动高级功能，例如接口回调，监听器，自动实例化单例，发布事件等等功能。
+
+### Spring Bean 在容器的生命周期是什么样的？
+
+- Bean容器启动阶段读取bean的元配置信息，转换为BeanDefinition对象，并注册到beanFactory中，保存在一个concurrentHashMap中。
+
+- 实例化 Bean 对象
+  - 使用依赖注入填充所有属性
+  - Aware 相关的属性，注入到 Bean 对象
+  - 调用相应的方法（BeanPostProcessor, InitializingBean#afterPropertiesSet, init），进一步初始化 Bean 对象
+- 容器关闭时调用销毁方法
+
+![](./pic/bean生命周期.png)
+
+###Spring Bean 怎么解决循环依赖的问题？
+
+- Spring 在创建 bean 的时候并不是等它完全完成，而是在创建过程中将创建中的 bean 的 ObjectFactory 提前曝光（即加入到 `singletonFactories` 缓存中）。
+- 这样，一旦下一个 bean 创建的时候需要依赖之前的bean ，则直接使用提前曝光的该bean的ObjectFactory 的 `#getObject()` 方法来获取。
+
+![](./pic/singletonBean创建.png)
+
+**getSingleton()过程图**
+
+![](./pic/getSingleton过程图.jpeg)
+
+**Spring只处理单例模式的循环依赖，无法处理原型模式的循环依赖，原因：对于原型模式，spring不缓存原型模式的bean，无法做到提前曝光bean。**
 
