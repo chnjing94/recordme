@@ -54,16 +54,26 @@ Spring 提供了两种IoC 容器，分别是 BeanFactory、ApplicationContext �
 
   ApplicationContext 在 `spring-context` 项目提供。
 
-  ApplicationContext 接口扩展了 BeanFactory 接口，它在 BeanFactory 基础上提供了一些额外的功能。内置如下功能：
+  ApplicationContext 接口扩展了 BeanFactory 接口，它在 BeanFactory 基础上提供了一些额外的功能。
 
-  - MessageSource ：管理 message ，实现国际化等功能。
-  - ApplicationEventPublisher ：事件发布。
-  - ResourcePatternResolver ：多资源加载。
-  - EnvironmentCapable ：系统 Environment（profile + Properties）相关。
-  - Lifecycle ：管理生命周期。
-  - Closable ：关闭，释放资源
-  - InitializingBean：自定义初始化。
-  - BeanNameAware：设置 beanName 的 Aware 接口。
+  如下：
+
+  - EnvironmentCapable：系统属性，环境变量初始化及验证。
+  - HierarchicalBeanFactory：载入多个有继承关系的上下文
+
+  - MessageSource ：国际化支持。
+
+  - ApplicationEventPublisher：事件机制。
+
+  - ResourcePatternResolver：资源访问，如URL和文件。
+
+  - Lifecycle管理，ApplicationContext在启动和结束时会调用所有实现了Lifecycle接口的bean的start和stop方法。
+
+  - 自动BeanPostProcessor注册
+
+  - 在启动的时候将所有非延迟单例bean进行实例化。
+
+    ![](./pic/ApplicationContext与BeanFactory区别.jpg)
 
 ### 依赖查找和依赖注入的区别？
 
@@ -82,7 +92,7 @@ Spring 提供了两种IoC 容器，分别是 BeanFactory、ApplicationContext �
 
 BeanFactory是IoC底层容器。
 
-FactoryBean是创建Bean的一种方式，帮助实现复杂的初始化逻辑。
+FactoryBean是创建Bean的一种方式，帮助实现复杂的初始化逻辑，通过getBean()去查找FactoryBean不是得到该FactoryBean本身，而是调用其getObject()返回的对象（该对象也会被缓存起来）。如果确实想要FactoryBean本身，在beanName前加上&。
 
 ### Spring IoC容器启动时做了哪些准备？
 
@@ -187,4 +197,6 @@ BeanFactory 最常用的是 XmlBeanFactory 。它可以根据 XML 文件中定�
 ![](./pic/getSingleton过程图.jpeg)
 
 **Spring只处理单例模式的循环依赖，无法处理原型模式的循环依赖，原因：对于原型模式，spring不缓存原型模式的bean，无法做到提前曝光bean。**
+
+**Spring无法处理构造器循环依赖（可以处理setter循环依赖），原因：spring会把当前正在创建的bean加入到一个正在创建的bean集合中，如果尝试创建正在创建中的bean就会抛循环依赖异常**
 
