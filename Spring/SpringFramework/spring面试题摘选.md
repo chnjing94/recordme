@@ -238,3 +238,32 @@ protected Object doCreateBean(final String beanName, final RootBeanDefinition mb
 - 容器关闭时调用销毁方法
 
 ![](./pic/bean生命周期.png)
+
+### BeanPostProcessor的使用场景有哪些？
+
+BeanPostProcessor提供Spring Bean初始化前和初始化后的生命周期回调，分别对应postProcessBeforeInitialization以及postProcessAfterInitialization方法，允许对关心的Bean进行扩展，甚至是替换。 
+
+其中ApplicationContext相关的Aware回调也是基于BeanPostProcessor实现。
+
+### BeanFactoryPostProcessor与BeanPostProcessor的区别？
+
+BeanFactoryPostProcessor是Spring BeanFactory的后置处理器，用于扩展BeanFactory，或通过BeanFactory进行依赖查找和依赖注入。BeanFactoryPostProcessor必须由Spring ApplicationContext执行，BeanFactory无法与其直接交互。而BeanPostProcessor则直接与BeanFactory关联，属于N对1。
+
+### BeanFactory怎样处理Bean生命周期？
+
+BeanFactory的默认实现为DefaultListableBeanFactory，其中Bean生命周期与方法映射如下：
+
+- BeanDefinition注册阶段 - registerBeanDefinition
+- BeanDefinition合并阶段 - getMergedBeanDefinition
+- Bean实例化前阶段 - resolveBeforeInstantiation
+- Bean实例化阶段 - createBeanInstance
+- Bean实例化后阶段 - populateBean
+- Bean属性赋值前阶段 - populateBean
+- Bean属性赋值阶段  - populateBean
+- Bean Aware接口回调阶段 - initializeBean
+- Bean初始化前阶段 - initializeBean
+- Bean初始化阶段 - initializeBean
+- Bean初始化后阶段 - initializeBean
+- Bean初始化完成阶段 - preInstantiateSingletons
+- Bean销毁前阶段 - destroyBean
+- Bean销毁阶段 - destoryBean
