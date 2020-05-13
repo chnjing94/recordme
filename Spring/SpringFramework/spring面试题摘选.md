@@ -267,3 +267,16 @@ BeanFactory的默认实现为DefaultListableBeanFactory，其中Bean生命周期
 - Bean初始化完成阶段 - preInstantiateSingletons
 - Bean销毁前阶段 - destroyBean
 - Bean销毁阶段 - destoryBean
+
+## Spring配置元信息
+
+### Spring内建XML Schema常见有哪些？
+
+![springschema](./pic/springschema.png)
+
+### Spring配置元信息具体有哪些？
+
+- Bean配置元信息，通过XML，Properties等，解析BeanDefinition。
+- IoC容器配置元信息，通过XML，Properties等，控制IoC容器行为，比如注解驱动，AOP等。
+- 外部化配置，通过资源抽象(如Properties，YAML等)，控制PropertySource。
+- Spring Profile：通过外部化配置，提供条件分支流程。
