@@ -8,6 +8,23 @@ java解压后有三个子文件夹BOOT-INF/，META-INF/，org/。根据JAR规范
 
 ASM的性能会比反射方式好（反射需要排除Java标准注解）。反射要求类被ClassLoader加载，会导致package下所有类被加载，而ASM是按需加载。
 
+### 自动装配
+
+#### 如何替代自动装配？
+
+SpringBoot优先解析自定义的Bean，因此可以通过自定义Bean来覆盖自动装配的Bean。
+
+#### 如何使自动装配失效？
+
+使用@EnableAutoConfiguration.exclude，@EnableAutoConfiguration.excludeName
+
+#### 自动装配步骤
+
+1. 加载所有META-INF/spring.factories下的与@EnableAutoConfiguration相关联的自动装配类
+2. 移除类名重复的自动装配类
+3. 根据@EnableAutoConfiguration.exclude，@EnableAutoConfiguration.excludeName，排除自动装配类。
+4. 再次过滤自动装配Class集合中Class不存在的成员。
+
 ### SpringApplication初始化阶段
 
 - 构造阶段：在使用SpringApplication.run()时，相当于调用new SpringApplication(Class, args)构造函数。Class参数作为引导类，也称作primarySource。之后做以下三件事：
@@ -42,7 +59,7 @@ ASM的性能会比反射方式好（反射需要排除Java标准注解）。反�
 
     
 
-#### Spring应用上下文运行前准备
+#### Spring应用上下文运行阶段
 
 1. Spring应用上下文准备阶段
 
@@ -81,21 +98,9 @@ SpringApplication会注册shutdownhook线程，当JVM退出时，保证所有Spr
 1. 让Throwable对象实现ExitCodeGenerator接口，不依赖ConfigurableApplicationContext活跃。
 2. ExitCodeExceptionMapper实现退出码与Throwable的映射，依赖ConfigurableApplicationContext活跃。
 
-
-
-
-
-
-
-
-
-
-
-
-
 ### Spring事件/监听机制
 
-Spring事件：ApplicationEvent，继承自java.util.EventObject，Spring Framework内建五种事件，如ContextRefreshedEvent。事件源为ApplicationContext。
+Spring事件：ApplicationEvent，继承自java.util.EventObject，Spring Framework内建五种事件，如ContextRefreshedEvent。事件发布者为ApplicationContext。
 
 Spring事件监听手段：1. 面向接口ApplicationListenser编程 2.注解@EventListenser。
 
