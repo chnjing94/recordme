@@ -1,3 +1,13 @@
+### SpringBoot核心特性
+
+- 嵌入式Web容器
+- 自动装配
+- SpringApplication
+- 外部化配置
+- 生产就绪
+
+
+
 ### 用 java -jar启动jar包形式的SpringBoot应用，具体执行流程
 
 java解压后有三个子文件夹BOOT-INF/，META-INF/，org/。根据JAR规范，会首先执行META-INF/MANIFEST.MF里指定的Main-Class，SpringBoot指定的Main-Class是/org/springframework/boot/loader/JarLauncher，JarLauncher.class里面指定了ClassPath，以及lib文件目录，在它的main方法里执行launch方法来启动应用程序。具体执行的入口方法是在MANIFEST.MF里指定的Start-Class，也就是我们用@SpringBootApplication标注的类的main函数(如果该类里没有main函数，就会扫描项目所有类中的main函数，如果有多个main函数就会报错)。
@@ -23,7 +33,7 @@ SpringBoot优先解析自定义的Bean，因此可以通过自定义Bean来覆�
 1. 加载所有META-INF/spring.factories下的与@EnableAutoConfiguration相关联的自动装配类
 2. 移除类名重复的自动装配类
 3. 根据@EnableAutoConfiguration.exclude，@EnableAutoConfiguration.excludeName，排除自动装配类。
-4. 再次过滤自动装配Class集合中Class不存在的成员。
+4. 根据@Conditional再次过滤自动装配Class集合中Class不存在的成员。
 
 ### SpringApplication初始化阶段
 
