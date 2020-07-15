@@ -2,6 +2,32 @@
 
 ### 如何保障可用性？
 
+### 消息存储
+
+RocketMQ的存储文件包括Commitlog文件，ConsumeQueue文件，IndexFile文件，checkpoint文件，abort文件。
+
+![](./pic/存储设计概要.png)
+
+- Commitlog文件，所有的消息都顺序写入Commitlog中，存放在${ROCKET_HOME}/store/commitlog下，每个文件默认1G ，写满后新建一个。
+- ConsumeQueue文件，存储消息消费队列，以Topic为目录存放。消息写入Commitlog文件后，将有线程异步将消息转发写入ConsumeQueue文件供消费者消费。
+- IndexFile，存储消息的key与偏移量的对应关系，用于快速检索特定key的消息。
+- checkpoint文件，记录了Commitlog文件，ConsumeQueue文件，IndexFile文件的上次刷盘时间点。
+- Abort文件，Broker启动时创建${ROCKET_HOME}/store/abort文件，注册JVM退出钩子函数删除abort，如果Broker启动时，发现abort文件存在，说明上次退出是异常退出，需要修复数据。
+
+#### 消息发送存储流程
+
+1. 获取当前可写入的Commitlog文件，也就是获取该Commitlog对应的MappedFile对象。
+2. 申请putMessageLock，申请成功才能写入Commitlog，因此Commitlog的写是串行的。
+3. 如果MappedFile为空说明commitlog目录下不存在任何文件，说明是第一次收到消息，因此创建第一个Commitlog文件。
+4. 设置消息存储时间，将消息追加到MappedFile中，通过对比当前写指针与文件大小来判断文件是否写满。
+5. 创建全局唯一消息ID，消息ID=4字节IP + 4字节端口号 + 8字节消息偏移量。
+6. 根据消息体长度，主题长度，属性长度计算消息总长度。
+7. 如果消息总长度大于Commitlog文件剩余空间，会新创建一个Commitlog来存储该消息。
+8. 将消息内容存到ByteBuffer中，等待刷盘。
+9. 更新消息队列逻辑偏移量。
+10. 释放putMessageLock。
+11. 根据同步/异步刷盘将内存中的数据持久化到磁盘。
+
 ### RocketMQ消息发送
 
 #### 消息结构
