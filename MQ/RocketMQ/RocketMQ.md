@@ -13,20 +13,35 @@ RocketMQ的存储文件包括Commitlog文件，ConsumeQueue文件，IndexFile文
 - IndexFile，存储消息的key与偏移量的对应关系，用于快速检索特定key的消息。
 - checkpoint文件，记录了Commitlog文件，ConsumeQueue文件，IndexFile文件的上次刷盘时间点。
 - Abort文件，Broker启动时创建${ROCKET_HOME}/store/abort文件，注册JVM退出钩子函数删除abort，如果Broker启动时，发现abort文件存在，说明上次退出是异常退出，需要修复数据。
+- ${ROCKET_HOME}/store/config目录下有以下文件
+  - consumerOffset.json: 集群消费模式消息消费进度。
+  - delayOffset.json：延时消息队列拉取进度。
+  - subscriptionGroup.json：消息消费组配置信息。
+  - Topics.json：topic配置属性。
 
 #### 消息发送存储流程
 
 1. 获取当前可写入的Commitlog文件，也就是获取该Commitlog对应的MappedFile对象。
 2. 申请putMessageLock，申请成功才能写入Commitlog，因此Commitlog的写是串行的。
 3. 如果MappedFile为空说明commitlog目录下不存在任何文件，说明是第一次收到消息，因此创建第一个Commitlog文件。
-4. 设置消息存储时间，将消息追加到MappedFile中，通过对比当前写指针与文件大小来判断文件是否写满。
-5. 创建全局唯一消息ID，消息ID=4字节IP + 4字节端口号 + 8字节消息偏移量。
-6. 根据消息体长度，主题长度，属性长度计算消息总长度。
-7. 如果消息总长度大于Commitlog文件剩余空间，会新创建一个Commitlog来存储该消息。
-8. 将消息内容存到ByteBuffer中，等待刷盘。
-9. 更新消息队列逻辑偏移量。
-10. 释放putMessageLock。
-11. 根据同步/异步刷盘将内存中的数据持久化到磁盘。
+4. 尝试将消息追加到MappedFile中
+   1. 创建全局唯一消息ID，消息ID=4字节IP + 4字节端口号 + 8字节消息偏移量。设置消息存储时间。
+   2. 根据消息体长度，主题长度，属性长度等数据计算消息总长度。
+   3. 如果消息总长度大于Commitlog文件剩余空间，会新创建一个Commitlog来存储该消息。
+   4. 将消息内容存到ByteBuffer中，等待刷盘。
+5. 更新消息队列逻辑偏移量。
+6. 释放putMessageLock。
+7. 根据同步/异步刷盘将内存中的数据持久化到磁盘。
+
+#### 文件刷盘机制
+
+RocketMQ存储与读写是基于JDK NIO的内存映射机制（MappedByteBuffer）实现的，通过配置broker配置文件中的flushDiskType来设定刷盘方式，ASYNC_FLUSH为异步刷盘，SYNC_FLUSH为同步刷盘，默认为异步。
+
+- 同步刷盘：消息被加载到内存映射文件后，提交至GroupCommitService线程，阻塞等待刷盘完成，超时时间5s。GroupCommitService每处理一批同步刷盘请求就休息10ms。GroupCommitService最终会调用MappedByteBuffer#force()完成刷盘。
+
+- 异步刷盘：可以选择开启transientStoreEnable机制，RocketMQ会申请一个与目标物理文件同样大的堆外内存，消息先追加到堆外内存，再每隔200ms提交到内存映射文件中，最后每隔500ms flush到磁盘。最后更新checkpoint文件的commitlog更新时间戳。
+
+  为什么引入额外引入一个堆外内存呢？如果直接写入MappedByteBuffer，会导致虚拟内存页交换频繁，使RocketMQ的消息吞吐量产生瓶颈。RocketMQ申请与commitlog一样大的堆外内存，并确保这些内存不被换到虚拟内存中，先将消息放入堆外内存进行缓存，再通过MappedByteBuffer刷盘，以此提升性能。
 
 ### RocketMQ消息发送
 
