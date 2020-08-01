@@ -137,3 +137,25 @@ FAIL 消息会强制每个接收到这消息的节点把节点 B 标记为 FAIL 
 - 节点已经恢复可达的，并且它是一个从节点。在这种情况下，FAIL 标识可以清除掉，因为从节点并没有被故障转移。
 - 节点已经恢复可达的，而且它是一个主节点，但经过了很长时间（N * NODE_TIMEOUT）后也没有检测到任何从节点被提升了。
 
+### Redis Cluster configuration parameters
+
+- **cluster-enabled<yes/no>**: 对单个redis实例而言，是否开启集群模式
+- **cluster-config-file\<filename>:** 指定配置文件名，这个文件不是给用户编辑的，而是redis在每次配置改变时持久化到磁盘上的，供重启时读取。
+- **cluster-node-timeout\<milliseconds>:** redis节点不可用的最大时间，在此期间内不会被认为不可用。当某节点与大多数节点失去连接超过该时间则会拒绝接受请求。
+- **cluster-slave-validity-factor\<factor>:** 如果设置为0，从节点会在与主节点失去连接后立马开始故障切换，而忽略node-timeout值。如果是正数，则在node-timeout * factor时间内不会进行故障切换。
+- **cluster-migration-barrier\<count>:**主节点必须与多少个从节点保持连接。
+- **cluster-require-full-coverage\<yes/no>:** 如果设置为yes，当某些槽位不在任何一个节点上时，集群拒绝写操作。
+- **cluster-allow-reads-when-down\<yes/no>:** 是否允许节点在处于fail状态时还可以对外提供读服务。
+
+### Nodes handshake
+
+以下两种情况下，节点会认为其他节点是集群的一部分：
+
+1. 如果节点信息出现在MEET message中，MEET message会让接收者节点强制认为这个节点是集群的一部分。节点只会在系统管理者发送以下命令时发送MEET message, 
+
+   ```
+   CLUSTER MEET ip port
+   ```
+
+2. 如果A已经与B建立了信任，B与C建立了信任，B会将AC的信息发送给AC，这样A和C就会主动尝试去连接对方。
+
