@@ -387,3 +387,195 @@ FailbackRegistry还定义了一个ScheduledExecutorService，定时任务线程�
 
 
 
+## Dubbo扩展点加载机制
+
+Dubbo扩展点加载机制是基于Dubbo SPI实现的，让Dubbo框架的接口和具体实现完全解耦，奠定了框架的良好扩展性。
+
+Dubbo SPI基于Java SPI的思想重新实现的，并兼容Java SPI。
+
+#### 改进
+
+相对于Java SPI，dubbo有如下改进：
+
+1. JDK标准SPI会一次性实例化所有扩展点，而不是需要时才实例化，浪费资源。
+2. 如果扩展加载失败，无法获得失败信息，导致异常的追踪困难。
+3. 增加了对扩展的Ioc和AOP支持。Ioc指的是，扩展点在实例化时需要注入依赖，或者可以通过setter注入属性，Dubbo就会自动完成这些工作。AOP指的是dubbo支持包装扩展类，将被代理类包装起来，在实际调用前后做一些操作。
+
+
+
+#### 扩展点分类
+
+首先可以分为两大类
+
+- Class缓存：SPI获取扩展类时，先尝试从缓存中取，没有则加载Class文件，并不会直接实例化。
+- 实例缓存：实例化的扩展类对象会被缓存起来
+
+
+
+根据不同特性分类：
+
+- 普通扩展类：配置在SPI配置文件中的扩展类实现
+- 包装扩展类：一种Wrapper类，没有具体实现，需要在构造器传入一个具体扩展接口的实现。
+- 自适应扩展类：使用@Adaptive注解在运行时动态指定扩展接口的具体实现类
+- 其他缓存：如扩展类加载器缓存，扩展名缓存
+
+
+
+#### 扩展点特性
+
+1. 自动包装
+
+   ExtensionLoader在加载扩展类时，发现这个扩展类的构造函数的参数中包含其他扩展点，则会认为这个扩展类就是Wrapper类。同时会自动传入该扩展点的实例到构造函数中。
+
+2. 自动加载
+
+   ExtensionLoader在加载扩展类时，会自动通过其setter方法注入对应的属性。
+
+3. 自适应
+
+   使用@Adaptive注解在运行时动态指定扩展点的具体实现类。
+
+4. 自动激活
+
+   使用@Activate注解可以标记对应的扩展点默认被激活启用。
+
+
+
+#### 扩展点注解
+
+- @SPI，指定接口的默认实现类
+- @Adaptive，可以标记在类、接口、枚举类和方法上。在Dubbo，绝大部分场景是标记在方法上。方法级别注解在第一次getExtension时，会自动生成一个动态的Adaptive类，从而达到动态类的效果。该注解放在实现类上，则整个实现类会作为默认实现，就不会生成动态类。@Adaptive注解可以传入多个参数，依次匹配直到匹配成功。
+- @Activate，可以标记在类、接口、枚举类和方法上。主要使用在有多个扩展点实现，需要根据不同条件被激活的场景中。可以传入的参数有group，value，before，after，order
+
+#### ExtensionLoader工作原理
+
+ExtensionLoader是整个扩展机制的主要逻辑类，实现了配置的加载，扩展类缓存，自适应对象生成等所有工作。
+
+1. **getExtension原理**
+
+   getExtension(String name) 主要有以下几个步骤
+
+   1. 先检查缓存中是否有现成数据，如果没有则调用createExtension开始创建，有则直接返回。
+   2. 检查缓存中是否有配置信息，没有则读取SPI路径下的配置文件，并根据配置加载所有扩展类（不初始化）
+      - 通过I/O读取字符流，得到扩展点实现类的全称
+      - 通过反射获取扩展实现类并缓存起来，此时并不做初始化。
+   3. 根据name找到对应的类，并通过Class.forName方法进行初始化
+      - 查找setter方法，并注入实例。
+      - 初始化完成后，检查所有的包装类，如果其构造函数参数为该刚初始化扩展类实例，为其注入该实例，并实例化该包装类。
+   4. 返回对应的扩展类实例。
+
+2. **getAdaptiveExtension实现原理**
+
+   1. 先加载配置文件
+   2. 生成自适应类的代码字符串
+   3. 获取类加载器和编译器，并用编译器编译刚才生成的代码字符串
+   4. 返回对应的自适应类实例
+
+3. **getActivateExtension实现原理**
+
+   getActivateExtension(URL url, String key, String group) 参数分别是URL，URL中的key（用逗号隔开），分组信息。
+
+   1. 检查缓存，如果没有则初始化所有扩展类实现的集合
+   2. 遍历整个@Activate注解集合，根据传入的URL匹配条件得到符合激活条件的扩展类实现。然后根据@Activate中配置的before, after, order进行排序
+   3. 根据用户URL配置的顺序，调整扩展点激活顺序。
+   4. 返回所有的自动激活类集合。
+
+#### 扩展点动态编译的实现
+
+Dubbo中有三种代码编译器，分别是JDK编译器，Javassist编译器（默认）和AdaptiveCompiler编译器。可以通过
+
+```
+<dubbo:application compiler="jdk" />
+```
+
+进行配置。
+
+
+
+## Dubbo启停原理解析
+
+### 配置解析
+
+1. 基于XML配置解析
+
+   Dubbo利用Spring配置文件扩展出自定义解析方式。
+
+   Spring在解析自定义标签，例如\<dubbo:service>，会查找spring.schemas和spring.handlers文件。spring.schemas中添加了Dubbo配置约束文件dubbo.xsd。spring.handlers中指明了DubboNamespaceHandler，是XML解析逻辑的入口。
+
+   
+
+   DubboNamespaceHandler
+   1. registerBeanDefinitionParser约定了在遇到application，module，registry等都会委托给DubboBeanDefinitionParser处理。
+
+   2. DubboBeanDefinitionParser将标签解析成对应的Bean定义并注册到Spring上下文中，同时保证相同id的Bean不会被覆盖。
+
+   3. 最终得到例如ApplicationConfig, ProtocolConfig, RegistryConfig对象
+
+   
+
+2. 基于注解配置解析
+
+   @EnableDubbo用于激活注解驱动的Dubbo配置，它继承了两个注解
+
+   - DubboComponentScan：扫描指定路径下的包，将@DubboService和@Service注解的类生成新的rootBeanDefinition，用于Spring启动后的服务暴露。为@DubboReference和@Reference标注的字段注入实例。
+   - EnableDubboConfig：将ApplicationConfig，ProtocolConfig，ProviderConfig，RegistryConfig等配置Bean注册到Spring容器。
+
+
+
+### 服务暴露
+
+**配置优先级**
+
+1. -D传递的JVM参数
+2. 代码或XML配置
+3. dubbo.properties配置文件
+
+
+
+**远程暴露机制**
+
+![](./pic/远程服务暴露机制.png)
+
+主要有两大步
+
+1. 通过代理，将配置解析阶段生成的服务实例转化为Invoker
+   - 构造服务URL
+   - 执行监控数据上报（可选）
+   - 通过动态代理的方式(JavassistProxyFactory和JdkProxyFactory)生成Invoker对象
+2. 把Invoker通过具体的协议（Dubbo, REST）转化成Exporter
+   - 委托具体协议进行服务暴露，创建NettyServer监听端口和保存服务实例
+   - 创建注册中心对象，与注册中心创建TCP连接
+   - 注册服务元数据到注册中心
+   - 订阅configurators节点，监听服务动态属性变更事件
+   - 服务销毁收尾工作，比如关闭端口，反注册服务信息等。
+
+**本地服务暴露**
+
+Dubbo默认把远程暴露的服务用injvm协议在本地再暴露一份，这样消费方直接消费同一个JVM内部的服务，避免了跨网络远程通信。
+
+### 服务消费
+
+**单注册中心消费原理**
+
+![](./pic/服务消费原理.png)
+
+主要有两个步骤：
+
+1. 通过持有远程服务实例生成Invoker，该Invoker在客户端是核心的远程代理对象。
+   - 通过injvmProtocol判断服务是否是一个JVM内部服务。
+   - 如果是单注册中心，通过referprotocol.refer(interfaceClass, 注册中心url)获取invoker
+   - 如果是多注册中心，通过referprotocol.refer获取多个invoker，每个注册中心对应一个Invoker，将所有的invoker保存在一个Diretory中，通过Cluster合并成一个invoker
+   - 在referprotocol.refer中，向注册中心订阅服务提供者，路由和动态配置信息。注册消费者信息到注册中心。
+   - 当获取providers信息时触发回调，生成Invoker对象。
+2. 将Invoker通过动态代理转换成实现用户接口的动态代理引用
+   - 使用JDKproxy将invoker对象转换成接口代理。
+
+### 优雅停机解析
+
+Dubbo优雅停机主要包括六个步骤：
+
+1. 收到kill 9进程退出信号，Spring容器会触发容器销毁事件。
+2. provider端会取消注册服务元数据信息。
+3. consumer会收到最新地址列表（不包含准备停机的地址）
+4. Dubbo协议会发送readonly事件报文通知consumer服务不可用。
+5. 服务端等待已经执行的任务结束，并拒绝新的请求。
