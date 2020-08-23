@@ -579,3 +579,83 @@ Dubbo优雅停机主要包括六个步骤：
 3. consumer会收到最新地址列表（不包含准备停机的地址）
 4. Dubbo协议会发送readonly事件报文通知consumer服务不可用。
 5. 服务端等待已经执行的任务结束，并拒绝新的请求。
+
+## Dubbo 远程调用
+
+### 核心调用流程
+
+![](./pic/Dubbo调用流程.png)
+
+1. 客户端在启动时从注册中心拉取订阅服务列表，Cluster将服务列表信息聚合为一个Invoker
+2. 触发路由操作，得到一批服务列表传递给负载均衡。
+3. 负载均衡挑出一台机器
+4. 进行RPC调用
+5. 将请求提交到线程池（线程池分为I/O线程池和业务线程池）
+6. 处理读写、序列化和反序列化。
+
+### 协议详解
+
+Dubbo协议
+
+![](./pic/Dubbo协议解析.png)
+
+
+
+Dubbo协议字段解析
+
+![](./pic/Dubbo协议字段解析1.png)
+
+![](./pic/Dubbo协议字段解析2.png)
+
+魔法数0xdabb用来处理TCP的网络粘包/拆包问题。
+
+全局请求id标识用来将response和request一一对应，这样客户端就可以使用多线程并发调用服务。
+
+### 编解码器原理
+
+ 
+
+### Dubbo线程模型
+
+Dubbo内部使用大量Handler组成类似链表，依次处理具体逻辑，比如编解码，心跳时间戳和方法调用Handler等。Dubbo会将多个handler聚合为一个以减少开销。
+
+
+
+Dubbo提供了大量的Handler去承载特性和扩展，常用Handler如下
+
+![](./pic/Dubbo常用Handler.png)
+
+
+
+**ExchangeHandlerAdapter**：
+
+1. 获取服务暴露协议的端口
+2. 获取调用传递的接口
+3. 根据端口、接口名、接口分组、接口版本构造唯一的serviceKey
+4. 根据serviceKey从HashMap中获取Exporter，从Exporter中获取Invoker
+
+
+
+Dubbo提供了一套可定制的线程模型来适应不同的场景。具体业务方需要根据使用场景启动不同的策略。
+
+![](./pic/线程分发策略.png)
+
+
+
+**HeaderExchangeHandler**
+
+Dubbo中，所有的方法调用会被抽象为Request/Response，然后交给HeaderExchangeHandler处理：
+
+1. 更新时间时间戳，在Dubbo心跳处理中会使用
+2. 处理readonly事件，用于Dubbo优雅停机
+3. 如果收到的是Request，处理方法调用并返回给客户端。其中会先判断请求报文是否正确，不正确则将具体异常包装成字符串并返回，防止后续序列化错误。
+4. 如果收到的是Response，告知业务调用方。
+
+
+
+**Dubbo心跳Handler**
+
+Dubbo默认客户端和服务端都会发送心跳报文来维持TCP长连接状态。服务端发现客户端超时则关闭客户端连接，客户端发现服务端超时则重新连接。默认心跳时间是60s。
+
+
+
