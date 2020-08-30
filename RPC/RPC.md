@@ -659,3 +659,133 @@ Dubbo默认客户端和服务端都会发送心跳报文来维持TCP长连接状
 
 
 
+## Dubbo集群容错
+
+Cluster是Dubbo的集群容错层，该层中包含了Cluster，Directory，Router，LoadBalance几大核心接口。Cluster接口是容错接口，提供Failover、Failfast等容错策略。
+
+### 容错机制
+
+![](./pic/容错机制1.png)
+
+![](./pic/容错机制2.png)
+
+用户可在\<dubbo:service>、\<dubbo:reference>、\<dubbo:provider>标签上通过cluster属性设置。
+
+- **Faileover策略**
+
+  ![](./pic/Failover流程.png)
+
+- **Failfast策略**
+
+  Failfast在失败后直接抛出异常并返回
+
+  1. 校验传入的Invoker列表是否为空
+  2. 负载均衡
+  3. 远程调用，在try代码块中调用invoker#invoker做远程调用，如果捕获异常则直接封装成RpcException抛出。
+
+- **Failsafe策略**
+
+  前面的步骤和Failfast策略完全一样，不同之处在try代码中，catch到任何异常都直接吞掉，返回空的结果。
+
+- **Failback策略**
+
+  和Failover的区别是会一直重试直到成功。
+
+  1. 检验传入参数
+  2. 负载均衡
+  3. 远程调用，在try代码中调用invoker#invoker，catch到异常后，将invocation保存到重试的map中，并返回空结果集。
+  4. 定时线程池会定时把map中的失败请求拿出来重新请求，请求成功则从map中移除。
+
+- **Available策略**
+
+  遍历Invoker列表，如果Invoker是可用的则直接调用并返回，如果遍历整个列表都没找到可用的，则抛出异常。
+
+- **Broadcast策略**
+
+  遍历所有Invoker，直接做RPC调用，任何一个节点调用出错，并不中断广播过程，会先记录异常最后广播完成再抛出。
+
+- **Forking策略**
+
+  ![](./pic/Forking调用流程.png)
+
+  主线程循环调用Invoker列表，提交到线程池中进行实际调用，返回结果将加入阻塞队列中，然后主线程通过poll方法阻塞等待第一个返回的结果，如果是正常的，则返回结果。如果是异常（只有当所有调用都失败才可能是异常，因为请求异常时会判断失败数是否等于任务总数，是才会将异常加入阻塞队列），Forking才会失败。
+
+### Directory实现
+
+整个容错过程会先调用Directory#list来获取所有的Invoker列表，Directory有两种实现
+
+- RegistryDirectory，动态从注册中心获取Invocker列表
+- StaticDirectory，用户自己设置的Invocker列表
+
+
+
+### 路由实现
+
+路由分为：
+
+- 条件路由：用户使用Dubbo定义的语法规则去写路由规则
+- 文件路由：用户将路由规则写在文件中，由Dubbo读取。
+- 脚本路由：使用JDK自身的脚本引擎解析路由规则脚本，默认是JavaScript。
+
+
+
+**条件路由参数规则**
+
+条件路由使用condition://协议，URL形式是
+
+```
+condition://0.0.0.0/com.foo.BarService?category=router&dynamic=false&rule= + URL.encode("host=10.20.153.10=>host=10.20.153.11")
+```
+
+最后的路由规则会用URL.encode进行编码。
+
+参数说明：
+
+![](./pic/路由规则1.png)
+
+![](./pic/路由规则2.png)
+
+
+
+**文件路由实现**
+
+将自定义的脚本规则写在文件中，脚本语言可以是JS，Groovy等。URL中对应的key值填写文件的路径。文件路由先把文件中的路由脚本读出来，然后去匹配对应的脚本路由做解析。
+
+**脚本路由的实现**
+
+脚本路由使用JDK自带的脚本解析器解析并运行，默认使用JS解析器。在脚本中实现一个route方法，输入是invokers列表，输出是过滤后的invokers列表。
+
+### 负载均衡
+
+Dubbo自带四种负载均衡算法，用户可通过SPI进行自行扩展
+
+**Random负载均衡**
+
+按照权重设置随机概率做负载均衡。
+
+1. 遍历所有Invoker计算权重总和，并判断每个Invoker的权重是否一样，如果相同，直接nextInt随机选一个。
+2. 如果权重不同，nextInt(权重总和)得到一个偏移量，根据偏移量找到对应的Invoker。
+
+
+
+**带权RoundRobin负载均衡**
+
+根据设置的Invoker权重来判断轮询的比例，让能力强的Invoker接受更多请求。但是普通带权轮询很容易让一个节点流量暴增，因此引入了平滑轮询算法。
+
+1. 每次请求负载均衡时，遍历所有可用节点，对于每个Invoker，它的current=current+weight。计算所有Invoker的weight为totalWeight。
+2. 遍历结束，current最大的节点就是本次要选择的节点。然后让该节点的current=current - totalWeight。
+
+
+
+**LeastActive负载均衡**
+
+框架会记下每个Invoker的活跃数，每次从活跃数最小的Invoker里选一个节点。
+
+1. 进来一个请求该Invoker的活跃计数器+1，完成一个请求计数器-1。
+2. 根据活跃数，结合Random负载均衡算法随机选出一个Invoker。
+
+
+
+**一致性Hash**
+
+用TreeMap实现。
