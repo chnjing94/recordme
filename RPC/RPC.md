@@ -789,3 +789,78 @@ Dubbo自带四种负载均衡算法，用户可通过SPI进行自行扩展
 **一致性Hash**
 
 用TreeMap实现。
+
+
+
+## Dubbo高级特性
+
+![](./pic/Dubbo高级特性.png)
+
+### 服务分组和版本
+
+服务暴露：
+
+```
+<dubbo:service interface="" version="1.0.0" group="g1"/>
+<dubbo:service interface="" version="2.0.0" group="g2"/>
+```
+
+服务消费：
+
+```
+<dubbo:reference interface="" version="1.0.0" group="g1"/>
+<dubbo:reference interface="" version="2.0.0" group="g2"/>
+```
+
+### 参数回调
+
+Dubbo支持异步参数回调，当消费方调用服务端方法时，允许服务端在某个时间点回调客户端的方法。在服务端回调客户端时，会复用已经建立的从客户端到服务端的TCP连接。
+
+### 隐式参数
+
+客户端调用RpcContext#setAttachment设置隐式参数，服务端调用RpcContext#getAttachment获取隐式参数
+
+### 异步调用
+
+![](./pic/Dubbo异步调用流程.png)
+
+客户端异步调用示例
+
+```java
+fooService.findFoo(fooId); // 触发异步调用
+Future<Foo> fooFuture = RpcContext.getContext().getFuture(); //在发起其他异步RPC之前，先将之前的future对象取出保存，否则会被之后生成的future对象覆盖。
+Foo foo = fooFuture.get();
+```
+
+### 泛化调用
+
+客户端可以不依赖服务接口API包发起远程调用。适合框架集成和网关类应用开发。
+
+### 上下文信息
+
+通过RpcContext#getContext获取上下文信息，如远程客户端IP，当前服务配置信息。
+
+### Mock调用
+
+Dubbo提供的容错能力，通常用于服务降级。使用示例
+
+```
+<dubbo:reference mock="true" />
+<dubbo:reference mock="com.foo.BarServiceMock"/>
+<dubbo:reference mock="return null"/>
+<dubbo:reference mock="throw XXXException"/>
+<dubbo:reference mock="return null"/>
+```
+
+### 结果缓存
+
+Dubbo提供对服务调用结果的缓存，将请求URL作为Key。
+
+```
+<dubbo:reference cache="lru" .../>
+```
+
+
+
+
+
