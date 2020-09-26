@@ -42,6 +42,13 @@ JMM通过内存屏障（Memory Barriers）来禁止特定类型的处理器重�
 
 JMM中不保证未同步程序的顺序一致性。只有正确同步了的程序（使用同步原语synchronized,volatile,final）才能保证顺序一致性。
 
+**final域重排序**
+
+- 禁止把final域的写重排到构造函数之外
+- 禁止重排序初次读对象引用与初次读该对象包含的final域
+
+JSR-133增强final的语义是为了防止线程看到final域不同的值（final域未初始化之前，对象就发布了）
+
 
 
 ## 2. 线程安全性
@@ -61,6 +68,15 @@ JMM中不保证未同步程序的顺序一致性。只有正确同步了的程�
     - Synchronized：依赖JVM
     - Lock: JDK提供的接口，依赖特殊的CPU指令，比如可重入锁
     
+- **CPU如何实现原子操作(例如CMPXCHG)**
+
+    1. 使用总线锁
+    2. 使用缓存锁
+
+- **Java如何实现原子操作**
+
+    使用循环CAS
+
 ### 2.2 可见性
 
 - Volatile  [Java并发编程：volatile关键字解析](https://www.cnblogs.com/dolphin0520/p/3920373.html)
@@ -479,7 +495,7 @@ Java语言中线程共有六种状态：
 5. Timed_Waiting（有时限等待）
 6. Terminated（终止状态）
 
-> - 能让线程从Runnable进入Blocked状态只有synchronized关键字，调用阻塞API，例如等待读取I/O，虽然在操作系统层面，线程处于阻塞，但JVM认为是处于Runnable，因为它认为等待I/O和等待CPU一样。
+> - 能让线程从Runnable进入Blocked状态只有synchronized关键字。调用阻塞API，例如等待读取I/O，虽然在操作系统层面，线程处于阻塞，但JVM认为是处于Runnable，因为它认为等待I/O和等待CPU一样。
 
 整体如下图所示：
 
