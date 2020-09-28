@@ -195,7 +195,7 @@ JSR-133增强final的语义是为了防止线程看到final域不同的值（fin
   }
   ```
 
-- HashSet, TreeSet -> CopyOnWriteArraySet, ConcurrentSkipListSet
+- .HashSet, TreeSet -> CopyOnWriteArraySet, ConcurrentSkipListSet
 - HashMap, TreeMap -> ConcurrentHashMap, ConcurrentSkipListMap
 
 J.U.C整体如下图
@@ -203,6 +203,10 @@ J.U.C整体如下图
 ![](./images/02.png)
 
 ## 5. AQS
+
+AQS（队列同步器）帮助我们可以便捷高效地实现同步组件。
+
+AQS采用了模板模式，使用AQS需要用户重写5个方法，分别是独占式锁的获取与释放，共享式锁的获取与释放，当前同步器是否在独占模式下被线程占用。
 
 > [【死磕Java并发】—–J.U.C之AQS：AQS简介](http://cmsblogs.com/?p=2174)
 >
@@ -278,6 +282,20 @@ try {
 ```
 
  [【死磕Java并发】—–J.U.C之Condition](http://cmsblogs.com/?p=2222)
+
+### 5.5 Lock接口
+
+通过Lock接口用来自定义锁时，通常需要借助AQS来实现。
+
+- 自定义锁类实现Lock接口
+- 定义一个内部类继承AQS，重写AQS的方法，实现自己的需求。
+- 通过调用内部类来实现Lock接口的方法
+
+Lock提供synchronized不具备的特性：
+
+- 尝试非阻塞获取锁
+- 能被中断地获取锁
+- 超时获取锁
 
 ## 6. J.U.C组件拓展
 
@@ -510,7 +528,7 @@ Java语言中线程共有六种状态：
 - **Thread类的 sleep 方法和对象的 wait 方法都可以让线程暂停执行，它们有什么区别？**
 
   - sleep 方法，是线程类 Thread 的静态方法。调用此方法会让当前线程暂停执行指定的时间，将执行机会（CPU）让给其他线程，但是对象的锁依然保持，因此休眠时间结束后会自动恢复（线程回到就绪状态）
-  - wait 方法，是 Object 类的方法。调用对象的 `#wait()` 方法，会导致当前线程放弃对象的锁（线程暂停执行），进入对象的等待池（wait pool），只有调用对象的 `#notify()` 方法（或`#notifyAll()`方法）时，才能唤醒等待池中的线程进入等锁池（lock pool），如果线程重新获得对象的锁就可以进入就绪状态。
+  - wait 方法，是 Object 类的方法。调用对象的 `#wait()` 方法，会导致当前线程放弃对象的锁（线程暂停执行），进入对象的等待队列（wait queue），只有调用对象的 `#notify()` 方法（或`#notifyAll()`方法）时，才能唤醒等待池中的线程进入同步队列（SynchronizedQueue），如果线程重新获得对象的锁就可以进入就绪状态。
 
 - **synchronized 的原理是什么?**
 
