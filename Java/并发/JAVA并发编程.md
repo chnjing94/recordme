@@ -208,6 +208,12 @@ AQS（队列同步器）帮助我们可以便捷高效地实现同步组件。
 
 AQS采用了模板模式，使用AQS需要用户重写5个方法，分别是独占式锁的获取与释放，共享式锁的获取与释放，当前同步器是否在独占模式下被线程占用。
 
+acquire和acquireShared的区别：
+
+acquire是唤醒同步队列头结点之后的**一个节点**，而acquireShared是唤醒后面**所有**处于等待状态的节点。
+
+
+
 > [【死磕Java并发】—–J.U.C之AQS：AQS简介](http://cmsblogs.com/?p=2174)
 >
 > [【死磕 Java 并发】—– J.U.C 之 AQS：CLH 同步队列](http://www.iocoder.cn/JUC/sike/aqs-1-clh?vip)
@@ -232,11 +238,29 @@ AQS采用了模板模式，使用AQS需要用户重写5个方法，分别是独�
 
  [[死磕Java并发]-----J.U.C之并发工具类：CyclicBarrier](<https://blog.csdn.net/chenssy/article/details/70160595>)
 
-### 5.4 ReentrantLock与锁
+### 5.4 ReentrantLock
 
  [【死磕Java并发】—–J.U.C之重入锁：ReentrantLock](http://cmsblogs.com/?p=2210)
 
+可重入：记录获取到锁的线程
+
+公平&非公平：判断自己是否有前置节点
+
+### 5.5 ReentrantReadWriteLock
+
  [【死磕Java并发】—–J.U.C之读写锁：ReentrantReadWriteLock](http://cmsblogs.com/?p=2213)
+
+读写状态设计：高16位表示读，低16位表示写
+
+读锁写锁基于同一个同步器实现。
+
+只要写锁没有被拿到，读锁可以源源不断地获取，造成写锁一直拿不到。
+
+锁降级：获取到写锁的线程，释放写锁前先获取读锁，再释放写锁，这样能够保证数据可见性。不至于刚写完就被改了。
+
+### 5.6 StampedLock
+
+克服了ReentrantReadWriteLock的写饥饿缺点。
 
 [JDK8新增锁StampedLock详解](<http://blog.sina.com.cn/s/blog_6f5e71b30102xfsb.html>)
 
