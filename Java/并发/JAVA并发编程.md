@@ -321,6 +321,42 @@ Lock提供synchronized不具备的特性：
 - 能被中断地获取锁
 - 超时获取锁
 
+### 5.6 Condition接口
+
+ Condition接口提供了类似Object的监视器方法，配合Lock可以实现等待/通知模式
+
+Condition.await 等于Object.wait，Condition.signal等于Object.notify
+
+**实现**：
+
+![](./images/Condition实现.png)
+
+
+
+**await**
+
+![](./images/await.png)
+
+
+
+**signal**
+
+![](./images/signal.png)
+
+### 5.7 LockSupport
+
+**park方法**
+
+阻塞当前线程，只有以下情况会返回
+
+- 执行unpark
+- 线程被中断
+- 超时
+
+**JVM实现park方法**
+
+linux下使用系统方法pthread_cond_wait，windows下使用WaitForSingleObject
+
 ## 6. J.U.C组件拓展
 
 ### 6.1 FutureTask
@@ -411,6 +447,8 @@ public class ForkJoinTaskExample extends RecursiveTask<Integer> {
 ### 6.3 BlockingQueue
 
  [BlockingQueue深入解析－BlockingQueue看这一篇就够了](https://www.cnblogs.com/WangHaiMing/p/8798709.html)
+
+**由ReentrantLock和Condition实现。**
 
 #### 6.3.1 DelayQueue
 
