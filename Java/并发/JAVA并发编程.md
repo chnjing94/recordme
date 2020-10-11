@@ -55,12 +55,13 @@ JSR-133增强final的语义是为了防止线程看到final域不同的值（fin
 
 ### 2.1 原子性
 
-- Atomic包
+- Atomic包：13个类，4种类型-原子更新基本类型，原子更新数组，原子更新引用，原子更新字段
+
     - **LongAdder** [《Java并发计数器探秘》](https://www.cnkirito.moe/java-concurrent-counter/) 
 
-    - **AtomicIntegerFieldUpdater** ：修改某一个类的对象的某一个字段，要求是非static, volatile 的字段。
+    - **AtomicXXXFieldUpdater** ：修改某一个类的对象的某一个字段，要求是**非static**的, 并且是**volatile**修饰的字段。
 
-    - **AtomicXXX**的CAS如何保证原子性？[《浅谈CAS(Compare and Swap) 原理》](https://www.cnblogs.com/Leo_wl/p/6899716.html)
+    - **AtomicXXX**使用CAS保证原子性。[《浅谈CAS(Compare and Swap) 原理》](https://www.cnblogs.com/Leo_wl/p/6899716.html)
 
     - **AtomicStampedReference**：解决ABA问题
 
@@ -70,8 +71,8 @@ JSR-133增强final的语义是为了防止线程看到final域不同的值（fin
     
 - **CPU如何实现原子操作(例如CMPXCHG)**
 
-    1. 使用总线锁
-    2. 使用缓存锁
+    1. 使用总线锁，总线锁定把CPU和内存之间通信锁住了，这使得锁定期间，其他处理器不能操作其他内存地址的数据，所以总线锁定的开销比较大。
+    2. 使用缓存锁，使用一个CPU使用缓存锁锁定了缓存中的一段内存地址，别的CPU无法缓存该内存地址。
 
 - **Java如何实现原子操作**
 
@@ -198,7 +199,7 @@ JSR-133增强final的语义是为了防止线程看到final域不同的值（fin
 - .HashSet, TreeSet -> CopyOnWriteArraySet, ConcurrentSkipListSet
 - HashMap, TreeMap -> ConcurrentHashMap, ConcurrentSkipListMap
 
-J.U.C整体如下图
+**J.U.C整体如下图**
 
 ![](./images/02.png)
 
