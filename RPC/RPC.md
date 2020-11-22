@@ -437,7 +437,7 @@ Dubbo SPI基于Java SPI的思想重新实现的，并兼容Java SPI。
 
 4. 自动激活
 
-   使用@Activate注解可以标记对应的扩展点默认被激活启用。
+   使用@Activate注解可以标记对应的扩展点默认被激活启用或者条件激活。
 
 
 
@@ -577,7 +577,7 @@ Dubbo优雅停机主要包括六个步骤：
 1. 收到kill 9进程退出信号，Spring容器会触发容器销毁事件。
 2. provider端会取消注册服务元数据信息。
 3. consumer会收到最新地址列表（不包含准备停机的地址）
-4. Dubbo协议会发送readonly事件报文通知consumer服务不可用。
+4. provider通过Dubbo协议发送readonly事件报文通知consumer服务不可用。
 5. 服务端等待已经执行的任务结束，并拒绝新的请求。
 
 ## Dubbo 远程调用

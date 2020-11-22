@@ -34,7 +34,7 @@ spring-expression：Spring表达式语言模块
 
 ## 反转控制IoC
 
-###什么是IoC？
+### 什么是IoC？
 
 IoC是反转控制，主要实现有依赖注入和依赖查找。
 
@@ -71,7 +71,7 @@ Spring 提供了两种IoC 容器，分别是 BeanFactory、ApplicationContext �
 
   - 自动BeanPostProcessor注册
 
-  - 在启动的时候将所有非延迟单例bean进行实例化。
+  - 在启动的时候将所有非延迟单例bean进行实例化，而BeanFactory是按需加载。
 
     ![](./pic/ApplicationContext与BeanFactory区别.jpg)
 
@@ -140,13 +140,13 @@ BeanFactory 最常用的是 XmlBeanFactory 。它可以根据 XML 文件中定�
 
 - 1、ClassPathXmlApplicationContext ：从 ClassPath 的 XML 配置文件中读取上下文，并生成上下文定义。应用程序上下文从程序环境变量中取得。示例代码如下：
 
-  ```
+  ```java
   ApplicationContext context = new ClassPathXmlApplicationContext(“bean.xml”);
   ```
 
 - 2、FileSystemXmlApplicationContext ：由文件系统中的XML配置文件读取上下文。示例代码如下：
 
-  ```
+  ```java
   ApplicationContext context = new FileSystemXmlApplicationContext(“bean.xml”);
   ```
 
@@ -230,12 +230,13 @@ protected Object doCreateBean(final String beanName, final RootBeanDefinition mb
 ### Spring Bean 在容器的生命周期是什么样的？
 
 - Bean容器启动阶段读取bean的元配置信息，转换为BeanDefinition对象，并注册到beanFactory中，保存在一个concurrentHashMap中。
-
 - 实例化 Bean 对象
   - 使用依赖注入填充所有属性
   - Aware 相关的属性，注入到 Bean 对象
   - 调用相应的方法（BeanPostProcessor, InitializingBean#afterPropertiesSet, init），进一步初始化 Bean 对象
 - 容器关闭时调用销毁方法
+
+
 
 ![](./pic/bean生命周期.png)
 
