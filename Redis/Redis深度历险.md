@@ -24,6 +24,8 @@ Redis有5种基础数据结构，分别为：string（字符串）、list（列�
 
 ### 1.1.3 Hash
 
+- value存储方式为ziplist或者hash，取决于value的个数是否超过阈值；利用这点可以做内存优化。
+
 - 相当于Java里的HashMap，数组+链表二维结构。
 - key只能是字符串。
 - 采用渐进式rehash策略，在rehash时，保留新旧两个hash，查询时会同时查两个hash，后续会定时将数据从旧的hash里移动到新的hash，迁移完成就会用新的hash代替旧的，然后回收其空间。
